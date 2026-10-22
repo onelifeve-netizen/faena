@@ -4,8 +4,13 @@
 // si conviene adelantar el próximo preventivo. La API key de Claude vive
 // SOLO como secret de Supabase — nunca llega al navegador.
 //
+// Multi-empresa: usa el JWT de quien llama (no la service-role key), así las
+// consultas quedan filtradas por RLS automáticamente — nadie puede pedir el
+// diagnóstico de una máquina de otra empresa.
+//
 // Deploy: supabase functions deploy ai-diagnostico
 // Secrets: supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
+// Secrets: supabase secrets set SUPABASE_ANON_KEY=... (no se inyecta sola)
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
@@ -22,18 +27,27 @@ Deno.serve(async (req) => {
     return Response.json({ error: "faltan machine_id o failure_description" }, { status: 400, headers: CORS_HEADERS });
   }
 
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader) {
+    return Response.json({ error: "falta la sesión del usuario" }, { status: 401, headers: CORS_HEADERS });
+  }
+
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    Deno.env.get("SUPABASE_ANON_KEY")!,
+    { global: { headers: { Authorization: authHeader } } }
   );
 
   const [machineRes, ordersRes, scheduleRes] = await Promise.all([
-    supabase.from("machines").select("*").eq("id", machine_id).single(),
+    supabase.from("machines").select("*").eq("id", machine_id).maybeSingle(),
     supabase.from("work_orders").select("*").eq("machine_id", machine_id).order("created_at", { ascending: false }).limit(20),
     supabase.from("maintenance_schedules").select("*").eq("machine_id", machine_id),
   ]);
 
   const machine = machineRes.data;
+  if (!machine) {
+    return Response.json({ error: "equipo no encontrado" }, { status: 404, headers: CORS_HEADERS });
+  }
   const history = (ordersRes.data ?? [])
     .map((o: any) => `- [${o.type}/${o.status}] ${o.created_at.slice(0, 10)}: ${o.title}${o.closed_note ? ` — resuelto: ${o.closed_note}` : ""}`)
     .join("\n") || "(sin órdenes de trabajo previas)";

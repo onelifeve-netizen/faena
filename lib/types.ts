@@ -1,8 +1,16 @@
 export type MachineStatus = "disponible" | "en_obra" | "mantenimiento";
 export type JobStatus = "planificada" | "en_curso" | "terminada";
 
+export interface Company {
+  id: string;
+  name: string;
+  invite_code: string;
+  created_at: string;
+}
+
 export interface Machine {
   id: string;
+  company_id: string;
   name: string;
   category: string | null;
   serial: string | null;
@@ -32,6 +40,7 @@ export interface MachineDepreciation {
 
 export interface Contact {
   id: string;
+  company_id: string;
   name: string;
   role: string | null;
   phone: string | null;
@@ -43,6 +52,7 @@ export interface Contact {
 
 export interface Job {
   id: string;
+  company_id: string;
   name: string;
   client: string | null;
   status: JobStatus;
@@ -63,6 +73,7 @@ export interface Job {
 
 export interface JobPayment {
   id: string;
+  company_id: string;
   job_id: string;
   amount: number;
   currency: string;
@@ -74,6 +85,7 @@ export interface JobPayment {
 
 export interface JobWorker {
   id: string;
+  company_id: string;
   job_id: string;
   contact_id: string | null;
   name: string;
@@ -86,6 +98,7 @@ export interface JobWorker {
 
 export interface JobExpense {
   id: string;
+  company_id: string;
   job_id: string;
   description: string;
   amount: number;
@@ -96,6 +109,7 @@ export interface JobExpense {
 
 export interface JobMachine {
   id: string;
+  company_id: string;
   job_id: string;
   machine_id: string;
   assigned_at: string;
@@ -105,6 +119,7 @@ export interface JobMachine {
 
 export interface JobLogEntry {
   id: string;
+  company_id: string;
   job_id: string;
   note: string;
   created_at: string;
@@ -114,6 +129,7 @@ export type UserRole = "admin" | "tecnico" | "lectura";
 
 export interface Profile {
   id: string;
+  company_id: string;
   email: string;
   first_name: string | null;
   last_name: string | null;
@@ -123,6 +139,7 @@ export interface Profile {
 
 export interface UserRoleRow {
   user_id: string;
+  company_id: string;
   role: UserRole;
   approved: boolean;
   created_at: string;
@@ -135,6 +152,7 @@ export type WorkOrderStatus = "pendiente" | "en_curso" | "cerrada";
 
 export interface WorkOrder {
   id: string;
+  company_id: string;
   machine_id: string;
   job_id: string | null;
   type: WorkOrderType;
@@ -153,6 +171,7 @@ export interface WorkOrder {
 
 export interface MaintenanceSchedule {
   id: string;
+  company_id: string;
   machine_id: string;
   name: string;
   frequency_days: number;
@@ -166,6 +185,7 @@ export interface MaintenanceSchedule {
 
 export interface JobInvoice {
   id: string;
+  company_id: string;
   job_id: string;
   amount: number;
   currency: string;

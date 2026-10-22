@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useMyRole } from "@/lib/roles";
-import { UserRole, UserRoleRow, Profile } from "@/lib/types";
+import { UserRole, UserRoleRow, Profile, Company } from "@/lib/types";
 import { logAudit } from "@/lib/audit";
 import Avatar from "@/components/Avatar";
 import FormError from "@/components/FormError";
@@ -28,6 +28,7 @@ export default function Usuarios() {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [company, setCompany] = useState<Company | null>(null);
 
   async function load() {
     const { data, error } = await supabase
@@ -41,6 +42,9 @@ export default function Usuarios() {
 
   useEffect(() => {
     load();
+    supabase.from("companies").select("id, name, invite_code, created_at").maybeSingle().then(({ data }) => {
+      setCompany(data);
+    });
   }, []);
 
   async function approve(userId: string, email: string) {
@@ -82,6 +86,12 @@ export default function Usuarios() {
       <header className="mb-8">
         <p className="font-mono text-xs text-steel uppercase tracking-wide">Acceso al equipo, por responsabilidad</p>
         <h1 className="font-display font-bold text-3xl text-ink">Usuarios</h1>
+        {company && (
+          <p className="text-xs text-steel mt-2">
+            Empresa: <span className="text-ink font-medium">{company.name}</span> · código de invitación:{" "}
+            <span className="serial">{company.invite_code}</span>
+          </p>
+        )}
       </header>
 
       <FormError message={error} />

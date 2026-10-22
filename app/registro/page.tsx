@@ -15,12 +15,14 @@ export default function Registro() {
   const [email, setEmail] = useState("");
   const [emailTouched, setEmailTouched] = useState(false);
   const [password, setPassword] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
 
   const emailValid = EMAIL_RE.test(email);
-  const allFilled = firstName.trim() && lastName.trim() && emailValid && password.length >= 6;
+  const allFilled =
+    firstName.trim() && lastName.trim() && emailValid && password.length >= 6 && inviteCode.trim();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -30,11 +32,18 @@ export default function Registro() {
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { first_name: firstName, last_name: lastName } },
+      options: { data: { first_name: firstName, last_name: lastName, invite_code: inviteCode.trim() } },
     });
     setLoading(false);
-    if (error) setError(error.message);
-    else setDone(true);
+    if (error) {
+      if (error.message.toLowerCase().includes("invitacion")) {
+        setError("Código de invitación inválido o faltante. Pedíselo a tu administrador.");
+      } else {
+        setError(error.message);
+      }
+    } else {
+      setDone(true);
+    }
   }
 
   return (
@@ -115,6 +124,19 @@ export default function Registro() {
                   placeholder="••••••••"
                 />
                 <PasswordStrength password={password} />
+              </label>
+              <label className="block text-xs text-steel">
+                Código de invitación
+                <input
+                  required
+                  className="focus-ring mt-1 w-full border border-line rounded-tag px-3 py-2 text-sm font-mono uppercase"
+                  value={inviteCode}
+                  onChange={(e) => setInviteCode(e.target.value)}
+                  placeholder="ej: A3F9C1D2"
+                />
+                <span className="block mt-1 text-[11px] text-steel/80">
+                  Te lo da el administrador de tu empresa.
+                </span>
               </label>
               {error && <p className="text-xs text-warn">{error}</p>}
               <button

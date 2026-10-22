@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { Session } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
+import AppShell from "@/components/AppShell";
 
 const PUBLIC_PATHS = ["/login", "/registro"];
 
@@ -66,7 +67,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  return <>{children}</>;
+  return <AppShell>{children}</AppShell>;
 }
 
 export function useSession() {
