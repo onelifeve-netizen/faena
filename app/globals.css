@@ -1,0 +1,65 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-display: "Space Grotesk", sans-serif;
+  --font-body: "Inter", sans-serif;
+  --font-mono: "IBM Plex Mono", monospace;
+}
+
+body {
+  background-color: #F3F4FA;
+  color: #12172B;
+  font-family: var(--font-body);
+}
+
+/* Ficha estándar: tarjeta blanca con sombra suave y una barra de estado a la izquierda */
+.asset-tag {
+  position: relative;
+  border: 1px solid #E5E7F2;
+  background: #FFFFFF;
+  border-radius: 10px;
+  padding-left: 16px;
+  box-shadow: 0 1px 2px 0 rgba(18, 23, 43, 0.04), 0 1px 12px -2px rgba(18, 23, 43, 0.06);
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+.asset-tag::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: #6D28D9;
+  border-radius: 10px 0 0 10px;
+}
+.asset-tag.status-disponible::before { background: #0E9F6E; }
+.asset-tag.status-en_obra::before { background: #2563EB; }
+.asset-tag.status-mantenimiento::before { background: #D97706; }
+
+a.asset-tag:hover, button.asset-tag:hover {
+  box-shadow: 0 2px 4px 0 rgba(18, 23, 43, 0.06), 0 4px 16px -4px rgba(18, 23, 43, 0.10);
+  transform: translateY(-1px);
+}
+
+.badge {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 3px 10px;
+  border-radius: 999px;
+  display: inline-block;
+}
+
+.serial {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: #5B6178;
+}
+
+.focus-ring:focus-visible {
+  outline: 2px solid #6D28D9;
+  outline-offset: 2px;
+}
