@@ -10,7 +10,8 @@
 //
 // Deploy: supabase functions deploy ai-diagnostico
 // Secrets: supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
-// Secrets: supabase secrets set SUPABASE_ANON_KEY=... (no se inyecta sola)
+// Secrets: supabase secrets set ANON_KEY=... (no se inyecta sola; Supabase no
+// deja usar el prefijo SUPABASE_ en secrets personalizados)
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
@@ -34,7 +35,7 @@ Deno.serve(async (req) => {
 
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_ANON_KEY")!,
+    Deno.env.get("ANON_KEY")!,
     { global: { headers: { Authorization: authHeader } } }
   );
 
