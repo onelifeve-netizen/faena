@@ -55,6 +55,10 @@ function ObraDetalleInner() {
 
   const [expenseDesc, setExpenseDesc] = useState("");
   const [expenseAmount, setExpenseAmount] = useState("");
+  const [invoicePhotoUrl, setInvoicePhotoUrl] = useState<string | null>(null);
+  const [readingInvoice, setReadingInvoice] = useState(false);
+  const [invoiceReadError, setInvoiceReadError] = useState("");
+  const [companyId, setCompanyId] = useState("");
   const [selectedMachine, setSelectedMachine] = useState("");
   const [noteText, setNoteText] = useState("");
 
@@ -67,7 +71,7 @@ function ObraDetalleInner() {
   const [noteError, setNoteError] = useState("");
 
   async function loadAll() {
-    const [jobRes, expRes, assignedRes, machRes, logRes, workersRes, payRes, invRes, ordersRes, wipRes, settingsRes] = await Promise.all([
+    const [jobRes, expRes, assignedRes, machRes, logRes, workersRes, payRes, invRes, ordersRes, wipRes, settingsRes, compRes] = await Promise.all([
       supabase.from("jobs").select("*").eq("id", id).single(),
       supabase.from("job_expenses").select("*").eq("job_id", id).order("created_at", { ascending: false }),
       supabase.from("job_machines").select("*, machine:machines(*)").eq("job_id", id).is("returned_at", null),
@@ -79,6 +83,7 @@ function ObraDetalleInner() {
       supabase.from("work_orders").select("*, machine:machines(*)").eq("job_id", id).order("created_at", { ascending: false }),
       supabase.from("job_wip").select("*").eq("job_id", id).maybeSingle(),
       supabase.from("settings").select("*").eq("key", "reference_currency").single(),
+      supabase.from("companies").select("id").maybeSingle(),
     ]);
     setJob(jobRes.data);
     setExpenses(expRes.data ?? []);
@@ -91,6 +96,7 @@ function ObraDetalleInner() {
     setRelatedOrders((ordersRes.data as WorkOrder[]) ?? []);
     setWip((wipRes.data as JobWip) ?? null);
     if (settingsRes.data) setRefCurrency(settingsRes.data.value);
+    if (compRes.data) setCompanyId(compRes.data.id);
     setLoading(false);
   }
 
@@ -117,6 +123,7 @@ function ObraDetalleInner() {
           amount: Number(expenseAmount),
           currency: expenseCurrency,
           fx_rate: expenseFx ? Number(expenseFx) : 1,
+          invoice_photo_url: invoicePhotoUrl,
         }),
       setExpenseError
     );
@@ -124,7 +131,47 @@ function ObraDetalleInner() {
     await logAudit("job_expense", id, "gasto cargado", `${expenseDesc}: ${expenseAmount} ${expenseCurrency}`);
     setExpenseDesc("");
     setExpenseAmount("");
+    setInvoicePhotoUrl(null);
     loadAll();
+  }
+
+  function fileToBase64(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve((reader.result as string).split(",")[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function handleInvoicePhoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !companyId) return;
+    setInvoiceReadError("");
+    setReadingInvoice(true);
+    try {
+      const ext = file.name.split(".").pop() || "jpg";
+      const path = `${companyId}/${id}/${Date.now()}.${ext}`;
+      const { error: uploadError } = await supabase.storage.from("facturas").upload(path, file);
+      if (!uploadError) setInvoicePhotoUrl(path);
+
+      const base64 = await fileToBase64(file);
+      const { data, error } = await supabase.functions.invoke("leer-factura", {
+        body: { image_base64: base64, media_type: file.type || "image/jpeg" },
+      });
+      if (error || !data || data.error) {
+        setInvoiceReadError("No se pudo leer la factura automáticamente. Completá el gasto a mano.");
+      } else {
+        if (data.description) setExpenseDesc(data.description);
+        if (data.amount != null) setExpenseAmount(String(data.amount));
+        if (data.currency) setExpenseCurrency(data.currency);
+      }
+    } catch {
+      setInvoiceReadError("No se pudo leer la factura automáticamente. Completá el gasto a mano.");
+    } finally {
+      setReadingInvoice(false);
+    }
   }
 
   async function addPayment(e: React.FormEvent) {
@@ -369,6 +416,12 @@ function ObraDetalleInner() {
         <p className="text-xs text-steel uppercase tracking-wide font-mono mb-2">Gastos reales</p>
         {canWrite(role) && (
           <>
+            <label className="focus-ring inline-flex items-center gap-1.5 text-xs text-accent font-mono hover:underline mb-2 cursor-pointer">
+              📷 {readingInvoice ? "Leyendo factura..." : "Leer factura con IA"}
+              <input type="file" accept="image/*" className="hidden" onChange={handleInvoicePhoto} disabled={readingInvoice} />
+            </label>
+            {invoicePhotoUrl && <p className="text-[11px] text-ok mb-2">Foto adjunta — revisá los datos y confirmá abajo.</p>}
+            {invoiceReadError && <p className="text-[11px] text-warn mb-2">{invoiceReadError}</p>}
             <form onSubmit={addExpense} className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <input
                 className="focus-ring col-span-2 border border-line rounded-tag px-3 py-1.5 text-sm"
@@ -403,7 +456,7 @@ function ObraDetalleInner() {
           <ul className="mt-3 space-y-1 text-xs text-steel">
             {expenses.map((e) => (
               <li key={e.id} className="flex justify-between">
-                <span>{e.description}</span>
+                <span>{e.description}{e.invoice_photo_url && " 📎"}</span>
                 <span className="serial">{formatMoney(Number(e.amount), e.currency)}</span>
               </li>
             ))}

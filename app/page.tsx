@@ -74,10 +74,10 @@ export default function Dashboard() {
       ) : (
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            <StatCard label="Equipos disponibles" value={disponibles} accent="ok" icon={IconBox} />
-            <StatCard label="Obras en curso" value={activas} accent="accent" icon={IconBuilding} />
-            <StatCard label="Órdenes de trabajo abiertas" value={openOrders.length} accent="info" icon={IconClipboard} />
-            <StatCard label="Preventivos vencidos" value={vencidas.length} accent={vencidas.length > 0 ? "warn" : "ok"} icon={IconWrench} />
+            <StatCard label="Equipos disponibles" value={disponibles} accent="ok" icon={IconBox} href="/inventario" emptyCta="+ agregar el primer equipo" />
+            <StatCard label="Obras en curso" value={activas} accent="accent" icon={IconBuilding} href="/obras/nueva" emptyCta="+ crear la primera obra" />
+            <StatCard label="Órdenes de trabajo abiertas" value={openOrders.length} accent="info" icon={IconClipboard} href="/ordenes/nueva" emptyCta="+ crear una orden" />
+            <StatCard label="Preventivos vencidos" value={vencidas.length} accent={vencidas.length > 0 ? "warn" : "ok"} icon={IconWrench} href="/mantenimiento" emptyCta="programar un mantenimiento" />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
@@ -130,7 +130,7 @@ export default function Dashboard() {
                     </div>
                   </Link>
                 ))}
-                {jobs.length === 0 && <EmptyHint text="Todavía no cargaste ninguna obra." />}
+                {jobs.length === 0 && <EmptyHint text="Todavía no cargaste ninguna obra." href="/obras/nueva" cta="+ crear la primera obra" />}
               </div>
             </section>
 
@@ -149,7 +149,7 @@ export default function Dashboard() {
                     <p className="text-xs text-steel mt-0.5">{s.name}</p>
                   </div>
                 ))}
-                {vencidas.length === 0 && proximas.length === 0 && <EmptyHint text="Nada vencido ni próximo." />}
+                {vencidas.length === 0 && proximas.length === 0 && <EmptyHint text="Nada vencido ni próximo." href="/mantenimiento" cta="programar un mantenimiento" />}
               </div>
             </section>
 
@@ -167,7 +167,7 @@ export default function Dashboard() {
                     </div>
                   </div>
                 ))}
-                {enMantenimiento === 0 && <EmptyHint text="Nada en mantenimiento por ahora." />}
+                {enMantenimiento === 0 && <EmptyHint text="Nada en mantenimiento por ahora." href="/inventario" cta="ver inventario" />}
               </div>
             </section>
           </div>
@@ -194,23 +194,36 @@ function StatCard({
   value,
   accent,
   icon: Icon,
+  href,
+  emptyCta,
 }: {
   label: string;
   value: number;
   accent: string;
   icon: (props: { className?: string }) => React.ReactElement;
+  href: string;
+  emptyCta: string;
 }) {
   return (
-    <div className="bg-panel border border-line rounded-tag shadow-card px-4 py-4">
+    <Link href={href} className="focus-ring block bg-panel border border-line rounded-tag shadow-card px-4 py-4 hover:shadow-sm transition-shadow">
       <div className={`w-8 h-8 rounded-tag flex items-center justify-center mb-3 bg-${accent}/10`}>
         <Icon className={`text-${accent}`} />
       </div>
       <p className={`font-display font-bold text-3xl text-${accent}`}>{value}</p>
-      <p className="text-xs text-steel mt-1">{label}</p>
-    </div>
+      <p className="text-xs text-steel mt-1">{value === 0 ? emptyCta : label}</p>
+    </Link>
   );
 }
 
-function EmptyHint({ text }: { text: string }) {
-  return <p className="text-sm text-steel border border-dashed border-line rounded-tag px-4 py-3">{text}</p>;
+function EmptyHint({ text, href, cta }: { text: string; href?: string; cta?: string }) {
+  return (
+    <div className="text-sm text-steel border border-dashed border-line rounded-tag px-4 py-3">
+      <p>{text}</p>
+      {href && cta && (
+        <Link href={href} className="focus-ring text-xs text-accent font-mono hover:underline mt-1 inline-block">
+          {cta} →
+        </Link>
+      )}
+    </div>
+  );
 }

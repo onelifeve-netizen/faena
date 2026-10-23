@@ -15,6 +15,7 @@ interface AuditEntry {
 
 const ENTITY_LABELS: Record<string, string> = {
   machine: "Inventario",
+  machine_spec: "Especificación técnica",
   job: "Obra",
   job_expense: "Gasto",
   job_payment: "Pago",

@@ -3,9 +3,13 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { Machine, WorkOrder, MaintenanceSchedule, MachineDepreciation } from "@/lib/types";
+import { Machine, WorkOrder, MaintenanceSchedule, MachineDepreciation, MachineSpec } from "@/lib/types";
 import StatusBadge from "@/components/StatusBadge";
 import DepreciationChart from "@/components/DepreciationChart";
+import FormError from "@/components/FormError";
+import { runMutation } from "@/lib/errors";
+import { logAudit } from "@/lib/audit";
+import { useMyRole, canWrite } from "@/lib/roles";
 
 export default function InventarioDetalle() {
   return (
@@ -16,12 +20,17 @@ export default function InventarioDetalle() {
 }
 
 function InventarioDetalleInner() {
+  const { role } = useMyRole();
   const searchParams = useSearchParams();
   const id = searchParams.get("id") ?? "";
   const [machine, setMachine] = useState<Machine | null>(null);
   const [orders, setOrders] = useState<WorkOrder[]>([]);
   const [schedules, setSchedules] = useState<MaintenanceSchedule[]>([]);
   const [depreciation, setDepreciation] = useState<MachineDepreciation | null>(null);
+  const [specs, setSpecs] = useState<MachineSpec[]>([]);
+  const [specLabel, setSpecLabel] = useState("");
+  const [specValue, setSpecValue] = useState("");
+  const [specError, setSpecError] = useState("");
   const [loading, setLoading] = useState(true);
   const [failureDesc, setFailureDesc] = useState("");
   const [diagnosing, setDiagnosing] = useState(false);
@@ -29,17 +38,40 @@ function InventarioDetalleInner() {
   const [diagnosisError, setDiagnosisError] = useState("");
 
   async function load() {
-    const [machRes, ordersRes, schedRes, depRes] = await Promise.all([
+    const [machRes, ordersRes, schedRes, depRes, specsRes] = await Promise.all([
       supabase.from("machines").select("*").eq("id", id).single(),
       supabase.from("work_orders").select("*").eq("machine_id", id).order("created_at", { ascending: false }),
       supabase.from("maintenance_schedules").select("*").eq("machine_id", id).order("next_due_at", { ascending: true }),
       supabase.from("machine_depreciation").select("*").eq("machine_id", id).maybeSingle(),
+      supabase.from("machine_specs").select("*").eq("machine_id", id).order("created_at", { ascending: true }),
     ]);
     setMachine(machRes.data);
     setOrders(ordersRes.data ?? []);
     setSchedules(schedRes.data ?? []);
     setDepreciation((depRes.data as MachineDepreciation) ?? null);
+    setSpecs((specsRes.data as MachineSpec[]) ?? []);
     setLoading(false);
+  }
+
+  async function addSpec(e: React.FormEvent) {
+    e.preventDefault();
+    if (!specLabel.trim() || !specValue.trim()) return;
+    const ok = await runMutation(
+      () => supabase.from("machine_specs").insert({ machine_id: id, label: specLabel.trim(), value: specValue.trim() }),
+      setSpecError
+    );
+    if (!ok) return;
+    await logAudit("machine_spec", id, "especificación agregada", `${specLabel.trim()}: ${specValue.trim()}`);
+    setSpecLabel("");
+    setSpecValue("");
+    load();
+  }
+
+  async function removeSpec(specId: string) {
+    setSpecError("");
+    const ok = await runMutation(() => supabase.from("machine_specs").delete().eq("id", specId), setSpecError);
+    if (!ok) return;
+    load();
   }
 
   useEffect(() => {
@@ -70,7 +102,9 @@ function InventarioDetalleInner() {
     <div className="max-w-3xl">
       <header className="mb-6 flex items-start justify-between">
         <div>
-          <p className="font-mono text-xs text-steel uppercase tracking-wide">{machine.category || "Equipo"}</p>
+          <p className="font-mono text-xs text-steel uppercase tracking-wide">
+            {machine.category || "Equipo"}{machine.location && ` · ${machine.location}`}
+          </p>
           <h1 className="font-display font-bold text-3xl text-ink">{machine.name}</h1>
           <p className="serial mt-1">{machine.serial || "sin N.° de serie"}</p>
         </div>
@@ -99,6 +133,51 @@ function InventarioDetalleInner() {
         {diagnosis && (
           <div className="mt-3 bg-base rounded-tag p-3 text-sm text-ink whitespace-pre-wrap">{diagnosis}</div>
         )}
+      </section>
+
+      {/* Ficha técnica / especificaciones */}
+      <section className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6">
+        <h2 className="font-display font-bold text-sm mb-1">Especificaciones técnicas</h2>
+        <p className="text-xs text-steel mb-3">
+          Datos que querés tener siempre a mano sin buscarlos en un manual: tipo de aceite, modelo
+          de filtro, n.° de serie de una pieza, lo que necesites para este equipo.
+        </p>
+        {specs.length === 0 ? (
+          <p className="text-sm text-steel mb-3">Todavía no cargaste especificaciones.</p>
+        ) : (
+          <div className="space-y-1.5 mb-3">
+            {specs.map((s) => (
+              <div key={s.id} className="flex items-center justify-between text-sm border-b border-line pb-1.5">
+                <span><span className="text-steel">{s.label}:</span> <span className="text-ink">{s.value}</span></span>
+                {canWrite(role) && (
+                  <button onClick={() => removeSpec(s.id)} className="focus-ring text-xs text-warn font-mono hover:underline">
+                    quitar
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        {canWrite(role) && (
+          <form onSubmit={addSpec} className="flex gap-2">
+            <input
+              className="focus-ring flex-1 border border-line rounded-tag px-3 py-1.5 text-sm"
+              placeholder="Etiqueta (ej: Filtro de aceite)"
+              value={specLabel}
+              onChange={(e) => setSpecLabel(e.target.value)}
+            />
+            <input
+              className="focus-ring flex-1 border border-line rounded-tag px-3 py-1.5 text-sm"
+              placeholder="Valor (ej: Mann W940)"
+              value={specValue}
+              onChange={(e) => setSpecValue(e.target.value)}
+            />
+            <button className="focus-ring bg-accent text-white text-sm px-4 py-1.5 rounded-tag hover:opacity-90 shrink-0">
+              Agregar
+            </button>
+          </form>
+        )}
+        <FormError message={specError} />
       </section>
 
       {/* Depreciación e inversión */}

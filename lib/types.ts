@@ -5,6 +5,7 @@ export interface Company {
   id: string;
   name: string;
   invite_code: string;
+  industry: string | null;
   created_at: string;
 }
 
@@ -13,6 +14,7 @@ export interface Machine {
   company_id: string;
   name: string;
   category: string | null;
+  location: string | null;
   serial: string | null;
   status: MachineStatus;
   notes: string | null;
@@ -22,6 +24,15 @@ export interface Machine {
   purchase_price_fx_rate: number;
   purchase_date: string | null;
   useful_life_years: number | null;
+}
+
+export interface MachineSpec {
+  id: string;
+  company_id: string;
+  machine_id: string;
+  label: string;
+  value: string;
+  created_at: string;
 }
 
 export interface MachineDepreciation {
@@ -104,6 +115,7 @@ export interface JobExpense {
   amount: number;
   currency: string;
   fx_rate: number;
+  invoice_photo_url: string | null;
   created_at: string;
 }
 

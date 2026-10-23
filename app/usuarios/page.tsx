@@ -42,7 +42,7 @@ export default function Usuarios() {
 
   useEffect(() => {
     load();
-    supabase.from("companies").select("id, name, invite_code, created_at").maybeSingle().then(({ data }) => {
+    supabase.from("companies").select("id, name, invite_code, industry, created_at").maybeSingle().then(({ data }) => {
       setCompany(data);
     });
   }, []);

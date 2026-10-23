@@ -14,17 +14,22 @@ export default function Ajustes() {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
   const [company, setCompany] = useState<Company | null>(null);
+  const [industry, setIndustry] = useState("");
+  const [savedIndustry, setSavedIndustry] = useState(false);
 
   useEffect(() => {
     async function load() {
       const [cur, mail, comp] = await Promise.all([
         supabase.from("settings").select("*").eq("key", "reference_currency").single(),
         supabase.from("settings").select("*").eq("key", "notification_email").maybeSingle(),
-        supabase.from("companies").select("id, name, invite_code, created_at").maybeSingle(),
+        supabase.from("companies").select("id, name, invite_code, industry, created_at").maybeSingle(),
       ]);
       if (cur.data) setCurrency(cur.data.value);
       if (mail.data) setNotifyEmail(mail.data.value);
-      if (comp.data) setCompany(comp.data);
+      if (comp.data) {
+        setCompany(comp.data);
+        setIndustry(comp.data.industry ?? "");
+      }
       setLoading(false);
     }
     load();
@@ -44,6 +49,18 @@ export default function Ajustes() {
     if (!ok2) return;
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
+  }
+
+  async function saveIndustry() {
+    if (!company) return;
+    setError("");
+    const ok = await runMutation(
+      () => supabase.from("companies").update({ industry: industry.trim() || null }).eq("id", company.id),
+      setError
+    );
+    if (!ok) return;
+    setSavedIndustry(true);
+    setTimeout(() => setSavedIndustry(false), 2000);
   }
 
   return (
@@ -101,6 +118,29 @@ export default function Ajustes() {
         </div>
         {saved && <span className="text-xs text-ok block mt-2">Guardado ✓</span>}
       </section>
+
+      {company && (
+        <section className="bg-panel border border-line rounded-tag shadow-card p-5 mt-4">
+          <h2 className="font-display font-bold text-sm mb-1">Rubro / industria</h2>
+          <p className="text-xs text-steel mb-4">
+            Opcional, solo informativo — no cambia cómo funciona la app, es para identificar a qué
+            se dedica tu empresa.
+          </p>
+          <div className="flex items-center gap-3">
+            <input
+              className="focus-ring flex-1 border border-line rounded-tag px-3 py-2 text-sm"
+              placeholder="Ej: Construcción, Gastronomía, Logística..."
+              value={industry}
+              onChange={(e) => setIndustry(e.target.value)}
+            />
+            <button onClick={saveIndustry} className="focus-ring bg-accent text-white text-sm px-4 py-2 rounded-tag hover:opacity-90 shrink-0">
+              Guardar
+            </button>
+          </div>
+          {savedIndustry && <span className="text-xs text-ok block mt-2">Guardado ✓</span>}
+        </section>
+      )}
+
       <FormError message={error} />
     </div>
   );
