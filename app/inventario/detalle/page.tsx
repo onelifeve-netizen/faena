@@ -67,10 +67,11 @@ function InventarioDetalleInner() {
     load();
   }
 
-  async function removeSpec(specId: string) {
+  async function removeSpec(spec: MachineSpec) {
     setSpecError("");
-    const ok = await runMutation(() => supabase.from("machine_specs").delete().eq("id", specId), setSpecError);
+    const ok = await runMutation(() => supabase.from("machine_specs").delete().eq("id", spec.id), setSpecError);
     if (!ok) return;
+    await logAudit("machine_spec", id, "especificación quitada", `${spec.label}: ${spec.value}`);
     load();
   }
 
@@ -150,7 +151,7 @@ function InventarioDetalleInner() {
               <div key={s.id} className="flex items-center justify-between text-sm border-b border-line pb-1.5">
                 <span><span className="text-steel">{s.label}:</span> <span className="text-ink">{s.value}</span></span>
                 {canWrite(role) && (
-                  <button onClick={() => removeSpec(s.id)} className="focus-ring text-xs text-warn font-mono hover:underline">
+                  <button onClick={() => removeSpec(s)} className="focus-ring text-xs text-warn font-mono hover:underline">
                     quitar
                   </button>
                 )}

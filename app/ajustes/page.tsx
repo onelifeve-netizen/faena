@@ -6,8 +6,10 @@ import { CURRENCIES } from "@/lib/currency";
 import { runMutation } from "@/lib/errors";
 import FormError from "@/components/FormError";
 import { Company } from "@/lib/types";
+import { useMyRole } from "@/lib/roles";
 
 export default function Ajustes() {
+  const { role } = useMyRole();
   const [currency, setCurrency] = useState("USD");
   const [notifyEmail, setNotifyEmail] = useState("");
   const [loading, setLoading] = useState(true);
@@ -126,18 +128,24 @@ export default function Ajustes() {
             Opcional, solo informativo — no cambia cómo funciona la app, es para identificar a qué
             se dedica tu empresa.
           </p>
-          <div className="flex items-center gap-3">
-            <input
-              className="focus-ring flex-1 border border-line rounded-tag px-3 py-2 text-sm"
-              placeholder="Ej: Construcción, Gastronomía, Logística..."
-              value={industry}
-              onChange={(e) => setIndustry(e.target.value)}
-            />
-            <button onClick={saveIndustry} className="focus-ring bg-accent text-white text-sm px-4 py-2 rounded-tag hover:opacity-90 shrink-0">
-              Guardar
-            </button>
-          </div>
-          {savedIndustry && <span className="text-xs text-ok block mt-2">Guardado ✓</span>}
+          {role === "admin" ? (
+            <>
+              <div className="flex items-center gap-3">
+                <input
+                  className="focus-ring flex-1 border border-line rounded-tag px-3 py-2 text-sm"
+                  placeholder="Ej: Construcción, Gastronomía, Logística..."
+                  value={industry}
+                  onChange={(e) => setIndustry(e.target.value)}
+                />
+                <button onClick={saveIndustry} className="focus-ring bg-accent text-white text-sm px-4 py-2 rounded-tag hover:opacity-90 shrink-0">
+                  Guardar
+                </button>
+              </div>
+              {savedIndustry && <span className="text-xs text-ok block mt-2">Guardado ✓</span>}
+            </>
+          ) : (
+            <p className="text-sm text-ink">{company.industry || "sin definir"}</p>
+          )}
         </section>
       )}
 

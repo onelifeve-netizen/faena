@@ -135,6 +135,15 @@ function ObraDetalleInner() {
     loadAll();
   }
 
+  async function verFactura(path: string) {
+    const { data, error } = await supabase.storage.from("facturas").createSignedUrl(path, 60);
+    if (error || !data) {
+      setExpenseError("No se pudo abrir la factura.");
+      return;
+    }
+    window.open(data.signedUrl, "_blank");
+  }
+
   function fileToBase64(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -147,7 +156,11 @@ function ObraDetalleInner() {
   async function handleInvoicePhoto(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = "";
-    if (!file || !companyId) return;
+    if (!file) return;
+    if (!companyId) {
+      setInvoiceReadError("Todavía está cargando la página, esperá un segundo y probá de nuevo.");
+      return;
+    }
     setInvoiceReadError("");
     setReadingInvoice(true);
     try {
@@ -455,8 +468,18 @@ function ObraDetalleInner() {
         {expenses.length > 0 && (
           <ul className="mt-3 space-y-1 text-xs text-steel">
             {expenses.map((e) => (
-              <li key={e.id} className="flex justify-between">
-                <span>{e.description}{e.invoice_photo_url && " 📎"}</span>
+              <li key={e.id} className="flex justify-between items-center">
+                <span>
+                  {e.description}
+                  {e.invoice_photo_url && (
+                    <button
+                      onClick={() => verFactura(e.invoice_photo_url!)}
+                      className="focus-ring ml-1.5 text-accent hover:underline"
+                    >
+                      📎 ver factura
+                    </button>
+                  )}
+                </span>
                 <span className="serial">{formatMoney(Number(e.amount), e.currency)}</span>
               </li>
             ))}

@@ -75,8 +75,8 @@ export default function Dashboard() {
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <StatCard label="Equipos disponibles" value={disponibles} accent="ok" icon={IconBox} href="/inventario" emptyCta="+ agregar el primer equipo" />
-            <StatCard label="Obras en curso" value={activas} accent="accent" icon={IconBuilding} href="/obras/nueva" emptyCta="+ crear la primera obra" />
-            <StatCard label="Órdenes de trabajo abiertas" value={openOrders.length} accent="info" icon={IconClipboard} href="/ordenes/nueva" emptyCta="+ crear una orden" />
+            <StatCard label="Obras en curso" value={activas} accent="accent" icon={IconBuilding} href="/obras" emptyCta="+ crear la primera obra" />
+            <StatCard label="Órdenes de trabajo abiertas" value={openOrders.length} accent="info" icon={IconClipboard} href="/ordenes" emptyCta="+ crear una orden" />
             <StatCard label="Preventivos vencidos" value={vencidas.length} accent={vencidas.length > 0 ? "warn" : "ok"} icon={IconWrench} href="/mantenimiento" emptyCta="programar un mantenimiento" />
           </div>
 
