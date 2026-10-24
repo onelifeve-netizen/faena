@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { Machine, WorkOrder, MaintenanceSchedule, MachineDepreciation, MachineSpec } from "@/lib/types";
 import StatusBadge from "@/components/StatusBadge";
 import DepreciationChart from "@/components/DepreciationChart";
+import MachineTimeline from "@/components/MachineTimeline";
 import FormError from "@/components/FormError";
 import { runMutation } from "@/lib/errors";
 import { logAudit } from "@/lib/audit";
@@ -36,6 +37,12 @@ function InventarioDetalleInner() {
   const [diagnosing, setDiagnosing] = useState(false);
   const [diagnosis, setDiagnosis] = useState<string | null>(null);
   const [diagnosisError, setDiagnosisError] = useState("");
+  const [summarizing, setSummarizing] = useState(false);
+  const [healthSummary, setHealthSummary] = useState<string | null>(null);
+  const [healthError, setHealthError] = useState("");
+  const [readingTag, setReadingTag] = useState(false);
+  const [tagSuggestions, setTagSuggestions] = useState<{ label: string; value: string }[]>([]);
+  const [tagError, setTagError] = useState("");
 
   async function load() {
     const [machRes, ordersRes, schedRes, depRes, specsRes] = await Promise.all([
@@ -96,6 +103,56 @@ function InventarioDetalleInner() {
     setDiagnosis(data?.suggestion ?? "Sin respuesta.");
   }
 
+  async function pedirResumenSalud() {
+    setSummarizing(true);
+    setHealthSummary(null);
+    setHealthError("");
+    const { data, error } = await supabase.functions.invoke("resumen-salud", {
+      body: { machine_id: id },
+    });
+    setSummarizing(false);
+    if (error) {
+      setHealthError("No se pudo obtener el resumen. ¿Está desplegada la función resumen-salud en Supabase?");
+      return;
+    }
+    setHealthSummary(data?.summary ?? "Sin respuesta.");
+  }
+
+  function fileToBase64(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve((reader.result as string).split(",")[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function handleTagPhoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setTagError("");
+    setTagSuggestions([]);
+    setReadingTag(true);
+    try {
+      const base64 = await fileToBase64(file);
+      const { data, error } = await supabase.functions.invoke("leer-chapa", {
+        body: { image_base64: base64, media_type: file.type || "image/jpeg" },
+      });
+      if (error || !data || data.error || !Array.isArray(data.specs)) {
+        setTagError("No se pudo leer la chapa automáticamente. Cargá las especificaciones a mano.");
+      } else if (data.specs.length === 0) {
+        setTagError("No se detectó texto legible en la foto.");
+      } else {
+        setTagSuggestions(data.specs);
+      }
+    } catch {
+      setTagError("No se pudo leer la chapa automáticamente. Cargá las especificaciones a mano.");
+    } finally {
+      setReadingTag(false);
+    }
+  }
+
   if (loading) return <p className="text-steel text-sm">Cargando...</p>;
   if (!machine) return <p className="text-steel text-sm">No se encontró el equipo.</p>;
 
@@ -134,6 +191,24 @@ function InventarioDetalleInner() {
         {diagnosis && (
           <div className="mt-3 bg-base rounded-tag p-3 text-sm text-ink whitespace-pre-wrap">{diagnosis}</div>
         )}
+
+        <div className="mt-4 pt-4 border-t border-line">
+          <p className="text-xs text-steel mb-2">
+            ¿No hay una falla puntual? Pedí un resumen general de salud del equipo (vida útil restante,
+            mantenimiento hecho, qué falta, y si conviene seguir invirtiendo o evaluar un reemplazo).
+          </p>
+          <button
+            onClick={pedirResumenSalud}
+            disabled={summarizing}
+            className="focus-ring bg-ink text-white text-sm px-4 py-1.5 rounded-tag hover:bg-ink/90 disabled:opacity-50"
+          >
+            {summarizing ? "Analizando..." : "Resumen de salud del equipo"}
+          </button>
+          {healthError && <p className="text-xs text-warn mt-3">{healthError}</p>}
+          {healthSummary && (
+            <div className="mt-3 bg-base rounded-tag p-3 text-sm text-ink whitespace-pre-wrap">{healthSummary}</div>
+          )}
+        </div>
       </section>
 
       {/* Ficha técnica / especificaciones */}
@@ -160,25 +235,68 @@ function InventarioDetalleInner() {
           </div>
         )}
         {canWrite(role) && (
-          <form onSubmit={addSpec} className="flex gap-2">
-            <input
-              className="focus-ring flex-1 border border-line rounded-tag px-3 py-1.5 text-sm"
-              placeholder="Etiqueta (ej: Filtro de aceite)"
-              value={specLabel}
-              onChange={(e) => setSpecLabel(e.target.value)}
-            />
-            <input
-              className="focus-ring flex-1 border border-line rounded-tag px-3 py-1.5 text-sm"
-              placeholder="Valor (ej: Mann W940)"
-              value={specValue}
-              onChange={(e) => setSpecValue(e.target.value)}
-            />
-            <button className="focus-ring bg-accent text-white text-sm px-4 py-1.5 rounded-tag hover:opacity-90 shrink-0">
-              Agregar
-            </button>
-          </form>
+          <>
+            <label className="focus-ring inline-flex items-center gap-1.5 text-xs text-accent font-mono hover:underline mb-2 cursor-pointer">
+              📷 {readingTag ? "Leyendo chapa..." : "Leer chapa/matrícula con IA"}
+              <input type="file" accept="image/*" className="hidden" onChange={handleTagPhoto} disabled={readingTag} />
+            </label>
+            {tagError && <p className="text-[11px] text-warn mb-2">{tagError}</p>}
+            {tagSuggestions.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                {tagSuggestions.map((s, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => { setSpecLabel(s.label); setSpecValue(s.value); }}
+                    className="focus-ring text-[11px] bg-info/10 text-info px-2 py-1 rounded-tag hover:opacity-80"
+                  >
+                    {s.label}: {s.value}
+                  </button>
+                ))}
+              </div>
+            )}
+            <form onSubmit={addSpec} className="flex gap-2">
+              <input
+                className="focus-ring flex-1 border border-line rounded-tag px-3 py-1.5 text-sm"
+                placeholder="Etiqueta (ej: Filtro de aceite)"
+                value={specLabel}
+                onChange={(e) => setSpecLabel(e.target.value)}
+              />
+              <input
+                className="focus-ring flex-1 border border-line rounded-tag px-3 py-1.5 text-sm"
+                placeholder="Valor (ej: Mann W940)"
+                value={specValue}
+                onChange={(e) => setSpecValue(e.target.value)}
+              />
+              <button className="focus-ring bg-accent text-white text-sm px-4 py-1.5 rounded-tag hover:opacity-90 shrink-0">
+                Agregar
+              </button>
+            </form>
+          </>
         )}
         <FormError message={specError} />
+      </section>
+
+      {/* Línea de tiempo del equipo */}
+      <section className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6">
+        <h2 className="font-display font-bold text-sm mb-1">Línea de tiempo del equipo</h2>
+        {machine.purchase_date ? (
+          <>
+            <p className="text-[11px] text-steel font-mono mb-3">
+              Compra → mantenimientos realizados → hoy → próximo preventivo → fin de vida útil estimado.
+            </p>
+            <MachineTimeline
+              purchaseDate={machine.purchase_date}
+              usefulLifeYears={machine.useful_life_years}
+              orders={orders}
+              schedules={schedules}
+            />
+          </>
+        ) : (
+          <p className="text-xs text-steel">
+            Sin fecha de compra cargada — no se puede armar la línea de tiempo. Editalo desde Inventario.
+          </p>
+        )}
       </section>
 
       {/* Depreciación e inversión */}
