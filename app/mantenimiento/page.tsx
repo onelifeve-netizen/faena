@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { Machine, MaintenanceSchedule } from "@/lib/types";
 import { logAudit } from "@/lib/audit";
@@ -26,6 +27,7 @@ export default function Mantenimiento() {
   const [frequency, setFrequency] = useState("90");
   const [formError, setFormError] = useState("");
   const [listError, setListError] = useState("");
+  const [orderCreatedFor, setOrderCreatedFor] = useState<string | null>(null);
 
   async function load() {
     const [schedRes, machRes] = await Promise.all([
@@ -96,6 +98,31 @@ export default function Mantenimiento() {
     load();
   }
 
+  async function crearOrden(s: MaintenanceSchedule, overdue: boolean) {
+    setListError("");
+    let newId: string | null = null;
+    const ok = await runMutation(async () => {
+      const { data, error } = await supabase
+        .from("work_orders")
+        .insert({
+          machine_id: s.machine_id,
+          type: "preventivo",
+          title: s.name,
+          description: `Generada desde la regla de mantenimiento "${s.name}" (cada ${s.frequency_days} días).`,
+          priority: overdue ? "alta" : "media",
+        })
+        .select()
+        .single();
+      newId = data?.id ?? null;
+      return { error };
+    }, setListError);
+    if (!ok) return;
+    if (newId) {
+      await logAudit("work_order", newId, "orden creada", `"${s.name}" (preventivo) para ${s.machine?.name} — desde Mantenimiento`);
+      setOrderCreatedFor(s.id);
+    }
+  }
+
   const today = new Date().toISOString().slice(0, 10);
 
   return (
@@ -104,6 +131,10 @@ export default function Mantenimiento() {
         <div>
           <p className="font-mono text-xs text-steel uppercase tracking-wide">Reglas recurrentes por equipo</p>
           <h1 className="font-display font-bold text-3xl text-ink">Mantenimiento preventivo</h1>
+          <p className="text-xs text-steel mt-1 max-w-md">
+            Acá definís la regla ("cada X días hacer tal cosa"). Cuando llegue el momento, usá
+            "crear orden de trabajo" para generar el ticket real en Órdenes.
+          </p>
         </div>
         {canWrite(role) && (
           <button onClick={() => setShowForm((s) => !s)} className="focus-ring bg-ink text-white text-sm px-4 py-2 rounded-tag hover:bg-ink/90 transition-colors">
@@ -177,6 +208,15 @@ export default function Mantenimiento() {
                   </span>
                   {canWrite(role) && (
                     <>
+                      {orderCreatedFor === s.id ? (
+                        <Link href="/ordenes" className="focus-ring text-xs text-ok font-mono hover:underline">
+                          ✓ orden creada — ver →
+                        </Link>
+                      ) : (
+                        <button onClick={() => crearOrden(s, overdue)} className="focus-ring text-xs text-accent font-mono hover:underline">
+                          crear orden de trabajo
+                        </button>
+                      )}
                       <button onClick={() => markDone(s)} className="focus-ring text-xs text-accent font-mono hover:underline">
                         hecho hoy
                       </button>
