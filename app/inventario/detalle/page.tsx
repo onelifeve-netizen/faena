@@ -8,7 +8,7 @@ import StatusBadge from "@/components/StatusBadge";
 import DepreciationChart from "@/components/DepreciationChart";
 import MachineTimeline from "@/components/MachineTimeline";
 import FormError from "@/components/FormError";
-import { runMutation } from "@/lib/errors";
+import { runMutation, functionErrorMessage } from "@/lib/errors";
 import { logAudit } from "@/lib/audit";
 import { useMyRole, canWrite } from "@/lib/roles";
 
@@ -97,7 +97,7 @@ function InventarioDetalleInner() {
     });
     setDiagnosing(false);
     if (error) {
-      setDiagnosisError("No se pudo obtener el diagnóstico. ¿Está desplegada la función ai-diagnostico en Supabase?");
+      setDiagnosisError(await functionErrorMessage(error, "No se pudo obtener el diagnóstico. ¿Está desplegada la función ai-diagnostico en Supabase?"));
       return;
     }
     setDiagnosis(data?.suggestion ?? "Sin respuesta.");
@@ -112,7 +112,7 @@ function InventarioDetalleInner() {
     });
     setSummarizing(false);
     if (error) {
-      setHealthError("No se pudo obtener el resumen. ¿Está desplegada la función resumen-salud en Supabase?");
+      setHealthError(await functionErrorMessage(error, "No se pudo obtener el resumen. ¿Está desplegada la función resumen-salud en Supabase?"));
       return;
     }
     setHealthSummary(data?.summary ?? "Sin respuesta.");
@@ -139,8 +139,10 @@ function InventarioDetalleInner() {
       const { data, error } = await supabase.functions.invoke("leer-chapa", {
         body: { image_base64: base64, media_type: file.type || "image/jpeg" },
       });
-      if (error || !data || data.error || !Array.isArray(data.specs)) {
-        setTagError("No se pudo leer la chapa automáticamente. Cargá las especificaciones a mano.");
+      if (error) {
+        setTagError(await functionErrorMessage(error, "No se pudo leer la chapa automáticamente. Cargá las especificaciones a mano."));
+      } else if (!data || data.error || !Array.isArray(data.specs)) {
+        setTagError(data?.error ?? "No se pudo leer la chapa automáticamente. Cargá las especificaciones a mano.");
       } else if (data.specs.length === 0) {
         setTagError("No se detectó texto legible en la foto.");
       } else {

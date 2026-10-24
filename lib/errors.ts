@@ -19,6 +19,24 @@ export function friendlyError(error: SupabaseError | null | undefined): string {
 }
 
 /**
+ * Extrae el mensaje de error real que devolvió una Edge Function (ej. el
+ * límite diario de IA) en vez de mostrar siempre un mensaje genérico. Si no
+ * se puede leer el cuerpo, cae en el mensaje por defecto que le pases.
+ */
+export async function functionErrorMessage(error: unknown, fallback: string): Promise<string> {
+  try {
+    const ctx = (error as { context?: Response })?.context;
+    if (ctx && typeof ctx.json === "function") {
+      const body = await ctx.json();
+      if (body?.error) return body.error as string;
+    }
+  } catch {
+    // ignorar, usamos el fallback
+  }
+  return fallback;
+}
+
+/**
  * Ejecuta una mutación de Supabase y devuelve si salió bien. Si falla, llama a
  * onError con un mensaje ya traducido — así cada pantalla solo necesita un
  * `if (!(await runMutation(...))) return;` en vez de repetir el chequeo de

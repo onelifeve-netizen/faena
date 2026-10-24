@@ -10,7 +10,7 @@ import ContactPicker from "@/components/ContactPicker";
 import { CURRENCIES, toReference, formatMoney } from "@/lib/currency";
 import FxRateField from "@/components/FxRateField";
 import { logAudit } from "@/lib/audit";
-import { runMutation } from "@/lib/errors";
+import { runMutation, functionErrorMessage } from "@/lib/errors";
 import FormError from "@/components/FormError";
 import { useMyRole, canWrite } from "@/lib/roles";
 
@@ -173,8 +173,10 @@ function ObraDetalleInner() {
       const { data, error } = await supabase.functions.invoke("leer-factura", {
         body: { image_base64: base64, media_type: file.type || "image/jpeg" },
       });
-      if (error || !data || data.error) {
-        setInvoiceReadError("No se pudo leer la factura automáticamente. Completá el gasto a mano.");
+      if (error) {
+        setInvoiceReadError(await functionErrorMessage(error, "No se pudo leer la factura automáticamente. Completá el gasto a mano."));
+      } else if (!data || data.error) {
+        setInvoiceReadError(data?.error ?? "No se pudo leer la factura automáticamente. Completá el gasto a mano.");
       } else {
         if (data.description) setExpenseDesc(data.description);
         if (data.amount != null) setExpenseAmount(String(data.amount));

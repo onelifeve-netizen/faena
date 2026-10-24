@@ -39,6 +39,20 @@ Deno.serve(async (req) => {
     { global: { headers: { Authorization: authHeader } } }
   );
 
+  const DAILY_AI_LIMIT = 50;
+  const todayStart = new Date().toISOString().slice(0, 10) + "T00:00:00Z";
+  const { count: usageToday } = await supabase
+    .from("ai_usage")
+    .select("*", { count: "exact", head: true })
+    .gte("created_at", todayStart);
+  if ((usageToday ?? 0) >= DAILY_AI_LIMIT) {
+    return Response.json(
+      { error: `Se alcanzó el límite diario de ${DAILY_AI_LIMIT} usos de IA para tu empresa. Probá de nuevo mañana.` },
+      { status: 429, headers: CORS_HEADERS }
+    );
+  }
+  await supabase.from("ai_usage").insert({ function_name: "ai-diagnostico" });
+
   const [machineRes, ordersRes, scheduleRes] = await Promise.all([
     supabase.from("machines").select("*").eq("id", machine_id).maybeSingle(),
     supabase.from("work_orders").select("*").eq("machine_id", machine_id).order("created_at", { ascending: false }).limit(20),

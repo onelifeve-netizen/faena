@@ -5,12 +5,15 @@
 // navegador.
 //
 // Multi-empresa: usa el JWT de quien llama (no la service-role key) — no lee
-// ninguna tabla, solo reenvía la imagen a Claude, pero se mantiene el mismo
-// patrón que ai-diagnostico por consistencia y porque valida que haya sesión.
+// tablas de negocio, solo reenvía la imagen a Claude, pero usa un cliente de
+// Supabase para controlar el límite diario de uso de IA por empresa.
 //
 // Deploy: supabase functions deploy leer-factura
 // Secrets: supabase secrets set ANTHROPIC_API_KEY=sk-ant-... (ya configurado
 // si ai-diagnostico funciona)
+// Secrets: ya usa el mismo ANON_KEY que ai-diagnostico.
+
+import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -24,6 +27,26 @@ Deno.serve(async (req) => {
   if (!authHeader) {
     return Response.json({ error: "falta la sesión del usuario" }, { status: 401, headers: CORS_HEADERS });
   }
+
+  const supabase = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("ANON_KEY")!,
+    { global: { headers: { Authorization: authHeader } } }
+  );
+
+  const DAILY_AI_LIMIT = 50;
+  const todayStart = new Date().toISOString().slice(0, 10) + "T00:00:00Z";
+  const { count: usageToday } = await supabase
+    .from("ai_usage")
+    .select("*", { count: "exact", head: true })
+    .gte("created_at", todayStart);
+  if ((usageToday ?? 0) >= DAILY_AI_LIMIT) {
+    return Response.json(
+      { error: `Se alcanzó el límite diario de ${DAILY_AI_LIMIT} usos de IA para tu empresa. Probá de nuevo mañana.` },
+      { status: 429, headers: CORS_HEADERS }
+    );
+  }
+  await supabase.from("ai_usage").insert({ function_name: "leer-factura" });
 
   const { image_base64, media_type } = await req.json();
   if (!image_base64 || !media_type) {
