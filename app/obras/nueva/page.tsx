@@ -201,6 +201,10 @@ export default function NuevaObra() {
                 <option key={m.user_id} value={m.name || m.email}>{m.name || m.email}</option>
               ))}
             </select>
+            <span className="block mt-1 text-[11px] text-steel/80">
+              Después de crear la obra podés sumar más gente — de tu equipo o contactos del
+              cliente — desde "Colaboradores", en el detalle de la obra.
+            </span>
           </label>
         </div>
 

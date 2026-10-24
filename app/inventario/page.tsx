@@ -25,6 +25,7 @@ export default function Inventario() {
   const [location, setLocation] = useState("");
   const [serial, setSerial] = useState("");
   const [locationFilter, setLocationFilter] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
   const [purchasePrice, setPurchasePrice] = useState("");
   const [purchaseCurrency, setPurchaseCurrency] = useState("ARS");
   const [purchaseFx, setPurchaseFx] = useState("1");
@@ -91,7 +92,11 @@ export default function Inventario() {
   }
 
   const locations = Array.from(new Set(machines.map((m) => m.location?.trim()).filter((l): l is string => !!l))).sort();
-  const filteredMachines = locationFilter ? machines.filter((m) => m.location === locationFilter) : machines;
+  const categories = Array.from(new Set(machines.map((m) => m.category?.trim()).filter((c): c is string => !!c))).sort();
+  const filteredMachines = machines
+    .filter((m) => !locationFilter || m.location === locationFilter)
+    .filter((m) => !categoryFilter || m.category === categoryFilter)
+    .sort((a, b) => (a.category || "zzz").localeCompare(b.category || "zzz") || a.name.localeCompare(b.name));
 
   async function changeStatus(id: string, status: MachineStatus, name: string) {
     setListError("");
@@ -138,7 +143,13 @@ export default function Inventario() {
           </div>
           <FxRateField amount={purchasePrice} currency={purchaseCurrency} refCurrency={refCurrency} fxRate={purchaseFx} onFxRateChange={setPurchaseFx} />
           <Field label="Fecha de compra" value={purchaseDate} onChange={setPurchaseDate} type="date" />
-          <Field label="Vida útil (años)" value={usefulLife} onChange={setUsefulLife} placeholder="Ej: 10" type="number" />
+          <div>
+            <Field label="Vida útil (años)" value={usefulLife} onChange={setUsefulLife} placeholder="Ej: 10" type="number" />
+            <p className="text-[11px] text-steel/80 mt-1">
+              ¿No la sabés? Dejalo en blanco — lo completás después, cuando tengas el dato a mano
+              (manual del fabricante, chapa del equipo, etc.).
+            </p>
+          </div>
           <div className="col-span-1 sm:col-span-3">
             <button type="submit" className="focus-ring bg-accent text-white text-sm px-4 py-2 rounded-tag hover:opacity-90">
               Guardar
@@ -165,21 +176,38 @@ export default function Inventario() {
               size={110}
             />
           </div>
-          {locations.length > 0 && (
-            <label className="text-xs text-steel">
-              Filtrar por ubicación
-              <select
-                className="focus-ring mt-1 block border border-line rounded-tag px-3 py-2 text-sm bg-white"
-                value={locationFilter}
-                onChange={(e) => setLocationFilter(e.target.value)}
-              >
-                <option value="">Todas</option>
-                {locations.map((loc) => (
-                  <option key={loc} value={loc}>{loc}</option>
-                ))}
-              </select>
-            </label>
-          )}
+          <div className="flex flex-wrap gap-4">
+            {categories.length > 0 && (
+              <label className="text-xs text-steel">
+                Filtrar por categoría
+                <select
+                  className="focus-ring mt-1 block border border-line rounded-tag px-3 py-2 text-sm bg-white"
+                  value={categoryFilter}
+                  onChange={(e) => setCategoryFilter(e.target.value)}
+                >
+                  <option value="">Todas</option>
+                  {categories.map((cat) => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {locations.length > 0 && (
+              <label className="text-xs text-steel">
+                Filtrar por ubicación
+                <select
+                  className="focus-ring mt-1 block border border-line rounded-tag px-3 py-2 text-sm bg-white"
+                  value={locationFilter}
+                  onChange={(e) => setLocationFilter(e.target.value)}
+                >
+                  <option value="">Todas</option>
+                  {locations.map((loc) => (
+                    <option key={loc} value={loc}>{loc}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
         </div>
       )}
 
@@ -191,33 +219,39 @@ export default function Inventario() {
         </p>
       ) : filteredMachines.length === 0 ? (
         <p className="text-sm text-steel border border-dashed border-line rounded-tag px-4 py-6 text-center">
-          No hay artículos en esa ubicación.
+          No hay artículos que coincidan con esos filtros.
         </p>
       ) : (
-        <div className="space-y-2">
-          {filteredMachines.map((m) => (
-            <div key={m.id} className={`asset-tag status-${m.status} px-5 py-4 flex items-center justify-between`}>
-              <Link href={`/inventario/detalle?id=${m.id}`} className="focus-ring">
-                <p className="font-medium text-sm text-ink hover:underline">{m.name}</p>
-                <p className="text-xs text-steel mt-0.5">
-                  {m.category && <span>{m.category} · </span>}
-                  {m.location && <span>{m.location} · </span>}
-                  <span className="serial">{m.serial || "sin N.° de serie"}</span>
-                </p>
-              </Link>
-              <div className="flex items-center gap-3">
-                <StatusBadge status={m.status} />
-                {canWrite(role) && (
-                  <select
-                    className="focus-ring text-xs border border-line rounded-tag px-2 py-1 bg-white"
-                    value={m.status}
-                    onChange={(e) => changeStatus(m.id, e.target.value as MachineStatus, m.name)}
-                  >
-                    <option value="disponible">Disponible</option>
-                    <option value="en_obra">En obra</option>
-                    <option value="mantenimiento">Mantenimiento</option>
-                  </select>
-                )}
+        <div className="space-y-5">
+          {groupByCategory(filteredMachines).map(([cat, items]) => (
+            <div key={cat}>
+              <p className="text-[11px] text-steel uppercase tracking-wide font-mono mb-2">{cat} ({items.length})</p>
+              <div className="space-y-2">
+                {items.map((m) => (
+                  <div key={m.id} className={`asset-tag status-${m.status} px-5 py-4 flex items-center justify-between`}>
+                    <Link href={`/inventario/detalle?id=${m.id}`} className="focus-ring">
+                      <p className="font-medium text-sm text-ink hover:underline">{m.name}</p>
+                      <p className="text-xs text-steel mt-0.5">
+                        {m.location && <span>{m.location} · </span>}
+                        <span className="serial">{m.serial || "sin N.° de serie"}</span>
+                      </p>
+                    </Link>
+                    <div className="flex items-center gap-3">
+                      <StatusBadge status={m.status} />
+                      {canWrite(role) && (
+                        <select
+                          className="focus-ring text-xs border border-line rounded-tag px-2 py-1 bg-white"
+                          value={m.status}
+                          onChange={(e) => changeStatus(m.id, e.target.value as MachineStatus, m.name)}
+                        >
+                          <option value="disponible">Disponible</option>
+                          <option value="en_obra">En obra</option>
+                          <option value="mantenimiento">Mantenimiento</option>
+                        </select>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           ))}
@@ -225,6 +259,15 @@ export default function Inventario() {
       )}
     </div>
   );
+}
+
+function groupByCategory(machines: Machine[]): [string, Machine[]][] {
+  const groups: Record<string, Machine[]> = {};
+  for (const m of machines) {
+    const key = m.category?.trim() || "Sin categoría";
+    (groups[key] ??= []).push(m);
+  }
+  return Object.entries(groups).sort(([a], [b]) => (a === "Sin categoría" ? 1 : b === "Sin categoría" ? -1 : a.localeCompare(b)));
 }
 
 function Field({

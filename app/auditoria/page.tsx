@@ -38,6 +38,7 @@ export default function Auditoria() {
   const [to, setTo] = useState("");
   const [entityFilter, setEntityFilter] = useState("");
   const [userFilter, setUserFilter] = useState("");
+  const [actionFilter, setActionFilter] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -52,6 +53,7 @@ export default function Auditoria() {
 
   const entityTypes = useMemo(() => Array.from(new Set(entries.map((e) => e.entity_type))), [entries]);
   const users = useMemo(() => Array.from(new Set(entries.map((e) => e.user_email).filter(Boolean))) as string[], [entries]);
+  const actions = useMemo(() => Array.from(new Set(entries.map((e) => e.action))).sort(), [entries]);
 
   const filtered = entries.filter((e) => {
     const day = e.created_at.slice(0, 10);
@@ -59,6 +61,7 @@ export default function Auditoria() {
     if (to && day > to) return false;
     if (entityFilter && e.entity_type !== entityFilter) return false;
     if (userFilter && e.user_email !== userFilter) return false;
+    if (actionFilter && e.action !== actionFilter) return false;
     return true;
   });
 
@@ -111,9 +114,15 @@ export default function Auditoria() {
             <option key={u} value={u}>{u}</option>
           ))}
         </select>
-        {(from || to || entityFilter || userFilter) && (
+        <select className="focus-ring border border-line rounded-tag px-2 py-1.5 text-xs bg-white" value={actionFilter} onChange={(e) => setActionFilter(e.target.value)}>
+          <option value="">Todas las acciones</option>
+          {actions.map((a) => (
+            <option key={a} value={a}>{a}</option>
+          ))}
+        </select>
+        {(from || to || entityFilter || userFilter || actionFilter) && (
           <button
-            onClick={() => { setFrom(""); setTo(""); setEntityFilter(""); setUserFilter(""); }}
+            onClick={() => { setFrom(""); setTo(""); setEntityFilter(""); setUserFilter(""); setActionFilter(""); }}
             className="focus-ring text-xs text-accent font-mono hover:underline"
           >
             limpiar filtros
@@ -133,7 +142,10 @@ export default function Auditoria() {
         <div className="space-y-1">
           {filtered.map((e) => (
             <div key={e.id} className="flex items-start gap-3 text-sm border-b border-line py-2">
-              <span className="badge bg-info/10 text-info shrink-0">{ENTITY_LABELS[e.entity_type] ?? e.entity_type}</span>
+              <div className="flex flex-col gap-1 shrink-0">
+                <span className="badge bg-info/10 text-info">{ENTITY_LABELS[e.entity_type] ?? e.entity_type}</span>
+                <span className="badge bg-steel/10 text-steel">{e.action}</span>
+              </div>
               <div className="flex-1">
                 <p className="text-ink">{e.detail ?? e.action}</p>
                 <p className="text-[11px] text-steel font-mono mt-0.5">

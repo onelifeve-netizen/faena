@@ -615,8 +615,8 @@ function ObraDetalleInner() {
 
       {/* Colaboradores */}
       <section className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="font-display font-bold text-sm">Colaboradores en esta obra</h2>
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="font-display font-bold text-sm">Personas en esta obra</h2>
           {canWrite(role) && (
             <button
               onClick={() => setShowWorkerForm((s) => !s)}
@@ -626,6 +626,10 @@ function ObraDetalleInner() {
             </button>
           )}
         </div>
+        <p className="text-xs text-steel mb-3">
+          Tu equipo y contactos del cliente — agregá los que necesites, con el rol que corresponda
+          (ej. "responsable", "encargado de obra", "electricista").
+        </p>
 
         {showWorkerForm && canWrite(role) && (
           <form onSubmit={addWorker} className="mb-4 bg-base rounded-tag p-3 space-y-2">

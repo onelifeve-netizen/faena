@@ -81,7 +81,11 @@ export default function Dashboard() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-            <div className="col-span-2 relative overflow-hidden rounded-tag p-5 text-white" style={{ background: "linear-gradient(135deg, #12172B 0%, #3B2170 100%)" }}>
+            <Link
+              href="/obras"
+              className="focus-ring col-span-2 relative overflow-hidden rounded-tag p-5 text-white block hover:opacity-95 transition-opacity"
+              style={{ background: "linear-gradient(135deg, #12172B 0%, #3B2170 100%)" }}
+            >
               <div className="absolute -right-6 -top-10 w-40 h-40 rounded-full bg-gold/10" />
               <div className="absolute -right-2 bottom-0 w-24 h-24 rounded-full bg-white/5" />
               <div className="relative grid grid-cols-1 sm:grid-cols-2 gap-6">
@@ -100,7 +104,10 @@ export default function Dashboard() {
                   <p className="text-[11px] text-white/50 mt-1">Lo cobrado menos lo gastado, sin estimar avance.</p>
                 </div>
               </div>
-            </div>
+              <p className="relative text-[11px] text-white/50 mt-4 pt-3 border-t border-white/10">
+                Se arma con los gastos, facturas y cobros de todas las obras en curso — ver el detalle de cada una en Obras →
+              </p>
+            </Link>
 
             <div className="bg-panel border border-line rounded-tag shadow-card p-5 flex flex-col">
               <p className="text-xs uppercase tracking-wide font-mono text-steel mb-3">Estados de equipos</p>
@@ -172,15 +179,34 @@ export default function Dashboard() {
             </section>
           </div>
 
-          <section className="mt-8 bg-panel border border-line rounded-tag shadow-card p-5 max-w-sm">
+          <section className="mt-8 bg-panel border border-line rounded-tag shadow-card p-5 max-w-2xl">
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-display font-bold text-lg">Calendario de mantenimiento</h2>
               <Link href="/mantenimiento" className="text-xs text-accent font-mono hover:underline">ver todo →</Link>
             </div>
-            <MaintenanceCalendar schedules={schedules} />
-            <div className="flex items-center gap-4 mt-3 text-[11px] text-steel">
-              <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-warn" />vencido</span>
-              <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-info" />programado</span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+              <div>
+                <MaintenanceCalendar schedules={schedules} />
+                <div className="flex items-center gap-4 mt-3 text-[11px] text-steel">
+                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-warn" />vencido</span>
+                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-info" />programado</span>
+                </div>
+              </div>
+              <div className="sm:border-l sm:border-line sm:pl-5">
+                <p className="text-[11px] text-steel uppercase tracking-wide font-mono mb-2">A tener en cuenta</p>
+                {[...vencidas, ...proximas].length === 0 ? (
+                  <p className="text-xs text-steel">Nada vencido ni próximo.</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {[...vencidas, ...proximas].slice(0, 5).map((s) => (
+                      <div key={s.id} className="flex items-center justify-between text-xs">
+                        <span className="text-steel truncate">{s.machine?.name} — {s.name}</span>
+                        <span className={s.next_due_at < today ? "text-warn" : "text-info"}>{s.next_due_at}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </section>
         </>
