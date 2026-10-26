@@ -9,7 +9,7 @@
 // el límite diario de uso de IA por empresa.
 //
 // Deploy: supabase functions deploy leer-chapa
-// Secrets: ya usa el mismo ANTHROPIC_API_KEY y ANON_KEY que ai-diagnostico/leer-factura.
+// Secrets: ya usa el mismo GEMINI_API_KEY y ANON_KEY que ai-diagnostico/leer-factura.
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
@@ -51,10 +51,10 @@ Deno.serve(async (req) => {
     return Response.json({ error: "faltan image_base64 o media_type" }, { status: 400, headers: CORS_HEADERS });
   }
 
-  const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY");
-  if (!anthropicKey) {
+  const geminiKey = Deno.env.get("GEMINI_API_KEY");
+  if (!geminiKey) {
     return Response.json(
-      { error: "falta el secret ANTHROPIC_API_KEY en Supabase" },
+      { error: "falta el secret GEMINI_API_KEY en Supabase" },
       { status: 500, headers: CORS_HEADERS }
     );
   }
@@ -69,27 +69,24 @@ Reglas:
 - Si no podés leer nada con confianza, devolvé un array vacío: []
 - No inventes datos que no estén en la imagen.`;
 
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": anthropicKey,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "claude-sonnet-5",
-      max_tokens: 400,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "image", source: { type: "base64", media_type, data: image_base64 } },
-            { type: "text", text: prompt },
-          ],
-        },
-      ],
-    }),
-  });
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              { inline_data: { mime_type: media_type, data: image_base64 } },
+              { text: prompt },
+            ],
+          },
+        ],
+        generationConfig: { maxOutputTokens: 400 },
+      }),
+    }
+  );
 
   if (!res.ok) {
     const detail = await res.text();
@@ -97,7 +94,7 @@ Reglas:
   }
 
   const data = await res.json();
-  const text = data.content?.[0]?.text ?? "";
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
 
   let parsed;
   try {

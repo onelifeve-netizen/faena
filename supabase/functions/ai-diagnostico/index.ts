@@ -9,7 +9,7 @@
 // diagnóstico de una máquina de otra empresa.
 //
 // Deploy: supabase functions deploy ai-diagnostico
-// Secrets: supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
+// Secrets: supabase secrets set GEMINI_API_KEY=...  (consola: aistudio.google.com)
 // Secrets: supabase secrets set ANON_KEY=... (no se inyecta sola; Supabase no
 // deja usar el prefijo SUPABASE_ en secrets personalizados)
 
@@ -70,10 +70,10 @@ Deno.serve(async (req) => {
     .map((s: any) => `- ${s.name}: cada ${s.frequency_days} días, próximo ${s.next_due_at}`)
     .join("\n") || "(sin mantenimiento preventivo programado)";
 
-  const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY");
-  if (!anthropicKey) {
+  const geminiKey = Deno.env.get("GEMINI_API_KEY");
+  if (!geminiKey) {
     return Response.json(
-      { error: "falta el secret ANTHROPIC_API_KEY en Supabase" },
+      { error: "falta el secret GEMINI_API_KEY en Supabase" },
       { status: 500, headers: CORS_HEADERS }
     );
   }
@@ -93,19 +93,17 @@ la falla actual, basándote en patrones del historial si los hay, y (2) decí si
 adelantar el próximo mantenimiento preventivo o no, y por qué. Sé concreto, sin rodeos, pensado
 para un técnico que tiene que decidir ahora.`;
 
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": anthropicKey,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "claude-sonnet-5",
-      max_tokens: 400,
-      messages: [{ role: "user", content: prompt }],
-    }),
-  });
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { maxOutputTokens: 400 },
+      }),
+    }
+  );
 
   if (!res.ok) {
     const detail = await res.text();
@@ -113,7 +111,7 @@ para un técnico que tiene que decidir ahora.`;
   }
 
   const data = await res.json();
-  const suggestion = data.content?.[0]?.text ?? "Sin respuesta.";
+  const suggestion = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "Sin respuesta.";
 
   return Response.json({ suggestion }, { headers: CORS_HEADERS });
 });

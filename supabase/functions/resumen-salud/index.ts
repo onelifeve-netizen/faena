@@ -11,7 +11,7 @@
 // consultas quedan filtradas por RLS automáticamente.
 //
 // Deploy: supabase functions deploy resumen-salud
-// Secrets: ya usa los mismos ANTHROPIC_API_KEY y ANON_KEY que ai-diagnostico.
+// Secrets: ya usa los mismos GEMINI_API_KEY y ANON_KEY que ai-diagnostico.
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
@@ -79,10 +79,10 @@ Valor en libros hoy: ${dep.book_value ?? "sin calcular"}.
 Gasto de mantenimiento acumulado: ${dep.maintenance_cost_total}.`
     : "Sin datos de compra/vida útil cargados para este equipo.";
 
-  const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY");
-  if (!anthropicKey) {
+  const geminiKey = Deno.env.get("GEMINI_API_KEY");
+  if (!geminiKey) {
     return Response.json(
-      { error: "falta el secret ANTHROPIC_API_KEY en Supabase" },
+      { error: "falta el secret GEMINI_API_KEY en Supabase" },
       { status: 500, headers: CORS_HEADERS }
     );
   }
@@ -105,19 +105,17 @@ Con esta información, en español y en no más de 8 líneas, dame un resumen de
 4) Una recomendación concreta: ¿conviene seguir invirtiendo en mantenimiento, o ya está cerca de justificar evaluar un reemplazo? Compará el gasto de mantenimiento acumulado contra el valor en libros si los datos lo permiten.
 Sé concreto y directo, pensado para alguien que tiene que decidir presupuesto.`;
 
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": anthropicKey,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "claude-sonnet-5",
-      max_tokens: 500,
-      messages: [{ role: "user", content: prompt }],
-    }),
-  });
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { maxOutputTokens: 500 },
+      }),
+    }
+  );
 
   if (!res.ok) {
     const detail = await res.text();
@@ -125,7 +123,7 @@ Sé concreto y directo, pensado para alguien que tiene que decidir presupuesto.`
   }
 
   const data = await res.json();
-  const summary = data.content?.[0]?.text ?? "Sin respuesta.";
+  const summary = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "Sin respuesta.";
 
   return Response.json({ summary }, { headers: CORS_HEADERS });
 });
