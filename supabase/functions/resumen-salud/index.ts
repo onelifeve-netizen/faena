@@ -106,7 +106,7 @@ Con esta información, en español y en no más de 8 líneas, dame un resumen de
 Sé concreto y directo, pensado para alguien que tiene que decidir presupuesto.`;
 
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${geminiKey}`,
     {
       method: "POST",
       headers: { "content-type": "application/json" },

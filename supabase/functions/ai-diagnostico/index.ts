@@ -94,7 +94,7 @@ adelantar el próximo mantenimiento preventivo o no, y por qué. Sé concreto, s
 para un técnico que tiene que decidir ahora.`;
 
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${geminiKey}`,
     {
       method: "POST",
       headers: { "content-type": "application/json" },
