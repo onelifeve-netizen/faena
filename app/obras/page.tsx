@@ -3,10 +3,11 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-import { Job, JobStatus } from "@/lib/types";
+import { Job, JobStatus, JobWip } from "@/lib/types";
 import StatusBadge from "@/components/StatusBadge";
 import FormError from "@/components/FormError";
 import { useMyRole, canWrite } from "@/lib/roles";
+import { toReference, formatMoney } from "@/lib/currency";
 
 const TABS: { key: JobStatus; label: string }[] = [
   { key: "planificada", label: "Futuras" },
@@ -17,21 +18,39 @@ const TABS: { key: JobStatus; label: string }[] = [
 export default function Obras() {
   const { role } = useMyRole();
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [wips, setWips] = useState<JobWip[]>([]);
+  const [refCurrency, setRefCurrency] = useState("USD");
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<JobStatus>("en_curso");
   const [error, setError] = useState("");
 
   useEffect(() => {
     async function load() {
-      const { data, error } = await supabase.from("jobs").select("*").order("created_at", { ascending: false });
-      if (error) setError("No se pudieron cargar las obras. Revisá tu conexión y recargá la página.");
-      setJobs(data ?? []);
+      const [jobsRes, wipRes, settingsRes] = await Promise.all([
+        supabase.from("jobs").select("*").order("created_at", { ascending: false }),
+        supabase.from("job_wip").select("*"),
+        supabase.from("settings").select("*").eq("key", "reference_currency").single(),
+      ]);
+      if (jobsRes.error) setError("No se pudieron cargar las obras. Revisá tu conexión y recargá la página.");
+      setJobs(jobsRes.data ?? []);
+      setWips((wipRes.data as JobWip[]) ?? []);
+      if (settingsRes.data) setRefCurrency(settingsRes.data.value);
       setLoading(false);
     }
     load();
   }, []);
 
   const filtered = jobs.filter((j) => j.status === tab);
+
+  const pending = jobs
+    .map((j) => {
+      const wip = wips.find((w) => w.job_id === j.id);
+      if (!wip) return null;
+      const pendingRef = toReference(Number(j.budget), Number(j.budget_fx_rate)) - Number(wip.collected_amount);
+      return { job: j, pendingRef };
+    })
+    .filter((x): x is { job: Job; pendingRef: number } => x !== null && x.pendingRef > 0)
+    .sort((a, b) => b.pendingRef - a.pendingRef);
 
   return (
     <div>
@@ -51,6 +70,21 @@ export default function Obras() {
       </header>
 
       <FormError message={error} />
+
+      {!loading && pending.length > 0 && (
+        <section className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6">
+          <h2 className="font-display font-bold text-sm mb-1">Cobros pendientes</h2>
+          <p className="text-[11px] text-steel font-mono mb-3">Presupuesto convertido a {refCurrency} menos lo cobrado hasta ahora, en todas las obras.</p>
+          <div className="space-y-1.5">
+            {pending.map(({ job, pendingRef }) => (
+              <Link key={job.id} href={`/obras/detalle?id=${job.id}`} className="focus-ring flex items-center justify-between text-sm hover:underline">
+                <span className="text-ink">{job.name}</span>
+                <span className="serial text-warn">{formatMoney(pendingRef, refCurrency)}</span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       <div className="flex gap-1 mb-6 border border-line rounded-tag p-1 w-fit bg-panel">
         {TABS.map((t) => (

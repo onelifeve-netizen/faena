@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { Machine, WorkOrder, MaintenanceSchedule, MachineDepreciation, MachineSpec } from "@/lib/types";
+import { Machine, WorkOrder, WorkOrderType, WorkOrderPriority, WorkOrderStatus, MaintenanceSchedule, MachineDepreciation, MachineSpec } from "@/lib/types";
 import StatusBadge from "@/components/StatusBadge";
 import DepreciationChart from "@/components/DepreciationChart";
 import MachineTimeline from "@/components/MachineTimeline";
@@ -43,6 +43,15 @@ function InventarioDetalleInner() {
   const [readingTag, setReadingTag] = useState(false);
   const [tagSuggestions, setTagSuggestions] = useState<{ label: string; value: string }[]>([]);
   const [tagError, setTagError] = useState("");
+  const [showOrderForm, setShowOrderForm] = useState(false);
+  const [orderTitle, setOrderTitle] = useState("");
+  const [orderType, setOrderType] = useState<WorkOrderType>("correctivo");
+  const [orderPriority, setOrderPriority] = useState<WorkOrderPriority>("media");
+  const [orderDesc, setOrderDesc] = useState("");
+  const [orderError, setOrderError] = useState("");
+  const [closingOrderId, setClosingOrderId] = useState<string | null>(null);
+  const [closeNote, setCloseNote] = useState("");
+  const [closeCost, setCloseCost] = useState("");
 
   async function load() {
     const [machRes, ordersRes, schedRes, depRes, specsRes] = await Promise.all([
@@ -85,6 +94,65 @@ function InventarioDetalleInner() {
   useEffect(() => {
     if (id) load();
   }, [id]);
+
+  async function addOrder(e: React.FormEvent) {
+    e.preventDefault();
+    if (!orderTitle.trim()) return;
+    const ok = await runMutation(
+      () =>
+        supabase.from("work_orders").insert({
+          machine_id: id,
+          type: orderType,
+          title: orderTitle,
+          description: orderDesc || null,
+          priority: orderPriority,
+        }),
+      setOrderError
+    );
+    if (!ok) return;
+    await logAudit("work_order", id, "orden creada", `"${orderTitle}" (${orderType}) para ${machine?.name}`);
+    setOrderTitle("");
+    setOrderDesc("");
+    setOrderType("correctivo");
+    setOrderPriority("media");
+    setShowOrderForm(false);
+    load();
+  }
+
+  async function setOrderStatus(order: WorkOrder, status: WorkOrderStatus) {
+    if (status === "cerrada") {
+      setClosingOrderId(order.id);
+      return;
+    }
+    setOrderError("");
+    const ok = await runMutation(() => supabase.from("work_orders").update({ status }).eq("id", order.id), setOrderError);
+    if (!ok) return;
+    await logAudit("work_order", order.id, "cambio de estado", `"${order.title}" pasó a "${status}"`);
+    load();
+  }
+
+  async function closeOrder(order: WorkOrder) {
+    setOrderError("");
+    const ok = await runMutation(
+      () =>
+        supabase
+          .from("work_orders")
+          .update({
+            status: "cerrada",
+            closed_at: new Date().toISOString(),
+            closed_note: closeNote || null,
+            cost: closeCost ? Number(closeCost) : null,
+          })
+          .eq("id", order.id),
+      setOrderError
+    );
+    if (!ok) return;
+    await logAudit("work_order", order.id, "orden cerrada", `"${order.title}" cerrada${closeCost ? ` — costo ${closeCost}` : ""}`);
+    setClosingOrderId(null);
+    setCloseNote("");
+    setCloseCost("");
+    load();
+  }
 
   async function pedirDiagnostico(e: React.FormEvent) {
     e.preventDefault();
@@ -353,9 +421,49 @@ function InventarioDetalleInner() {
         )}
       </section>
 
-      {/* Historial de órdenes de trabajo */}
+      {/* Órdenes de trabajo del equipo */}
       <section className="bg-panel border border-line rounded-tag shadow-card p-5">
-        <h2 className="font-display font-bold text-sm mb-3">Historial de órdenes de trabajo</h2>
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="font-display font-bold text-sm">Órdenes de trabajo</h2>
+          {canWrite(role) && (
+            <button onClick={() => setShowOrderForm((s) => !s)} className="focus-ring text-xs text-accent font-mono hover:underline">
+              {showOrderForm ? "cancelar" : "+ nueva orden"}
+            </button>
+          )}
+        </div>
+        <p className="text-xs text-steel mb-3">Correctivos, inspecciones y emergencias de este equipo — lo preventivo se programa desde Mantenimiento.</p>
+
+        {showOrderForm && canWrite(role) && (
+          <form onSubmit={addOrder} className="mb-4 bg-base rounded-tag p-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <input
+              className="focus-ring sm:col-span-2 border border-line rounded-tag px-3 py-1.5 text-sm"
+              placeholder="Título (ej: pierde presión al arrancar)"
+              value={orderTitle}
+              onChange={(e) => setOrderTitle(e.target.value)}
+              required
+            />
+            <select className="focus-ring border border-line rounded-tag px-3 py-1.5 text-sm bg-white" value={orderType} onChange={(e) => setOrderType(e.target.value as WorkOrderType)}>
+              <option value="correctivo">Correctivo</option>
+              <option value="inspeccion">Inspección</option>
+              <option value="emergencia">Emergencia</option>
+            </select>
+            <select className="focus-ring border border-line rounded-tag px-3 py-1.5 text-sm bg-white" value={orderPriority} onChange={(e) => setOrderPriority(e.target.value as WorkOrderPriority)}>
+              <option value="baja">Prioridad baja</option>
+              <option value="media">Prioridad media</option>
+              <option value="alta">Prioridad alta</option>
+            </select>
+            <textarea
+              className="focus-ring sm:col-span-2 border border-line rounded-tag px-3 py-1.5 text-sm"
+              placeholder="Descripción (opcional)"
+              value={orderDesc}
+              onChange={(e) => setOrderDesc(e.target.value)}
+              rows={2}
+            />
+            <button className="focus-ring sm:col-span-2 bg-ink text-white text-sm py-1.5 rounded-tag">Crear orden</button>
+          </form>
+        )}
+        <FormError message={orderError} />
+
         {orders.length === 0 ? (
           <p className="text-sm text-steel">Sin órdenes de trabajo registradas todavía.</p>
         ) : (
@@ -371,6 +479,45 @@ function InventarioDetalleInner() {
                   {o.cost ? ` · costo ${o.cost}` : ""}
                 </p>
                 {o.closed_note && <p className="text-xs text-steel mt-0.5">{o.closed_note}</p>}
+
+                {canWrite(role) && o.status !== "cerrada" && closingOrderId !== o.id && (
+                  <div className="flex gap-2 mt-1.5">
+                    {o.status === "pendiente" && (
+                      <button onClick={() => setOrderStatus(o, "en_curso")} className="focus-ring text-xs text-accent font-mono hover:underline">
+                        iniciar
+                      </button>
+                    )}
+                    <button onClick={() => setOrderStatus(o, "cerrada")} className="focus-ring text-xs text-ok font-mono hover:underline">
+                      cerrar
+                    </button>
+                  </div>
+                )}
+
+                {closingOrderId === o.id && (
+                  <div className="mt-1.5 space-y-2 bg-base rounded-tag p-2">
+                    <input
+                      className="focus-ring w-full border border-line rounded-tag px-2 py-1 text-xs"
+                      placeholder="Nota de cierre (qué se hizo)"
+                      value={closeNote}
+                      onChange={(e) => setCloseNote(e.target.value)}
+                    />
+                    <input
+                      className="focus-ring w-full border border-line rounded-tag px-2 py-1 text-xs"
+                      placeholder="Costo (opcional)"
+                      type="number"
+                      value={closeCost}
+                      onChange={(e) => setCloseCost(e.target.value)}
+                    />
+                    <div className="flex gap-2">
+                      <button onClick={() => closeOrder(o)} className="focus-ring bg-ink text-white text-xs px-3 py-1 rounded-tag">
+                        Confirmar cierre
+                      </button>
+                      <button onClick={() => setClosingOrderId(null)} className="focus-ring text-xs text-steel font-mono">
+                        cancelar
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>

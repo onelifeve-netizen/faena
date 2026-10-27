@@ -8,12 +8,19 @@ import StatusBadge from "@/components/StatusBadge";
 import FormError from "@/components/FormError";
 import { logAudit } from "@/lib/audit";
 import { runMutation } from "@/lib/errors";
-import { CURRENCIES } from "@/lib/currency";
+import { CURRENCIES, toReference, formatMoney } from "@/lib/currency";
 import FxRateField from "@/components/FxRateField";
 import DonutChart from "@/components/DonutChart";
+import { IconBox } from "@/components/Icons";
 import { useMyRole, canWrite } from "@/lib/roles";
 
 const CHART_COLORS = ["#6D28D9", "#F4C430", "#2E86AB", "#E07A5F", "#81B29A", "#A34A22", "#3D5A80"];
+
+function categoryColor(category: string | null | undefined, categories: string[]) {
+  const key = category?.trim() || "Sin categoría";
+  const idx = categories.indexOf(key);
+  return CHART_COLORS[(idx < 0 ? categories.length : idx) % CHART_COLORS.length];
+}
 
 export default function Inventario() {
   const { role } = useMyRole();
@@ -162,9 +169,22 @@ export default function Inventario() {
       <FormError message={listError} />
 
       {!loading && machines.length > 0 && (
-        <div className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6 flex flex-wrap items-center justify-between gap-6">
-          <div>
-            <p className="text-xs text-steel uppercase tracking-wide font-mono mb-2">Por categoría</p>
+        <>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+            <KpiCard label="Artículos totales" value={machines.length.toString()} icon={IconBox} accent="accent" />
+            <KpiCard label="Disponibles" value={machines.filter((m) => m.status === "disponible").length.toString()} accent="ok" />
+            <KpiCard label="En obra" value={machines.filter((m) => m.status === "en_obra").length.toString()} accent="info" />
+            <KpiCard
+              label="Valor total cargado"
+              value={formatMoney(
+                machines.reduce((sum, m) => sum + (m.purchase_price != null ? toReference(m.purchase_price, m.purchase_price_fx_rate) : 0), 0),
+                refCurrency
+              )}
+              accent="gold"
+            />
+          </div>
+
+          <div className="bg-panel border border-line rounded-tag shadow-card p-4 mb-6 flex flex-wrap items-center gap-6">
             <DonutChart
               segments={Object.entries(
                 machines.reduce<Record<string, number>>((acc, m) => {
@@ -172,43 +192,43 @@ export default function Inventario() {
                   acc[key] = (acc[key] ?? 0) + 1;
                   return acc;
                 }, {})
-              ).map(([label, value], i) => ({ label, value, color: CHART_COLORS[i % CHART_COLORS.length] }))}
-              size={110}
+              ).map(([label, value]) => ({ label, value, color: categoryColor(label === "Sin categoría" ? null : label, categories) }))}
+              size={84}
             />
+            <div className="flex flex-wrap gap-3 flex-1">
+              {categories.length > 0 && (
+                <label className="text-xs text-steel">
+                  Categoría
+                  <select
+                    className="focus-ring mt-1 block border border-line rounded-tag px-3 py-1.5 text-sm bg-white"
+                    value={categoryFilter}
+                    onChange={(e) => setCategoryFilter(e.target.value)}
+                  >
+                    <option value="">Todas</option>
+                    {categories.map((cat) => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {locations.length > 0 && (
+                <label className="text-xs text-steel">
+                  Ubicación
+                  <select
+                    className="focus-ring mt-1 block border border-line rounded-tag px-3 py-1.5 text-sm bg-white"
+                    value={locationFilter}
+                    onChange={(e) => setLocationFilter(e.target.value)}
+                  >
+                    <option value="">Todas</option>
+                    {locations.map((loc) => (
+                      <option key={loc} value={loc}>{loc}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
+            </div>
           </div>
-          <div className="flex flex-wrap gap-4">
-            {categories.length > 0 && (
-              <label className="text-xs text-steel">
-                Filtrar por categoría
-                <select
-                  className="focus-ring mt-1 block border border-line rounded-tag px-3 py-2 text-sm bg-white"
-                  value={categoryFilter}
-                  onChange={(e) => setCategoryFilter(e.target.value)}
-                >
-                  <option value="">Todas</option>
-                  {categories.map((cat) => (
-                    <option key={cat} value={cat}>{cat}</option>
-                  ))}
-                </select>
-              </label>
-            )}
-            {locations.length > 0 && (
-              <label className="text-xs text-steel">
-                Filtrar por ubicación
-                <select
-                  className="focus-ring mt-1 block border border-line rounded-tag px-3 py-2 text-sm bg-white"
-                  value={locationFilter}
-                  onChange={(e) => setLocationFilter(e.target.value)}
-                >
-                  <option value="">Todas</option>
-                  {locations.map((loc) => (
-                    <option key={loc} value={loc}>{loc}</option>
-                  ))}
-                </select>
-              </label>
-            )}
-          </div>
-        </div>
+        </>
       )}
 
       {loading ? (
@@ -222,17 +242,20 @@ export default function Inventario() {
           No hay artículos que coincidan con esos filtros.
         </p>
       ) : (
-        <div className="space-y-5">
+        <div className="space-y-6">
           {groupByCategory(filteredMachines).map(([cat, items]) => (
             <div key={cat}>
-              <p className="text-[11px] text-steel uppercase tracking-wide font-mono mb-2">{cat} ({items.length})</p>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: categoryColor(cat === "Sin categoría" ? null : cat, categories) }} />
+                <p className="text-[11px] text-steel uppercase tracking-wide font-mono">{cat} ({items.length})</p>
+              </div>
               <div className="space-y-2">
                 {items.map((m) => (
                   <div key={m.id} className={`asset-tag status-${m.status} px-5 py-4 flex items-center justify-between`}>
                     <Link href={`/inventario/detalle?id=${m.id}`} className="focus-ring">
-                      <p className="font-medium text-sm text-ink hover:underline">{m.name}</p>
+                      <p className="font-semibold text-sm text-ink hover:underline">{m.name}</p>
                       <p className="text-xs text-steel mt-0.5">
-                        {m.location && <span>{m.location} · </span>}
+                        {m.location ? <span>{m.location} · </span> : <span className="text-steel/50">sin ubicación · </span>}
                         <span className="serial">{m.serial || "sin N.° de serie"}</span>
                       </p>
                     </Link>
@@ -268,6 +291,30 @@ function groupByCategory(machines: Machine[]): [string, Machine[]][] {
     (groups[key] ??= []).push(m);
   }
   return Object.entries(groups).sort(([a], [b]) => (a === "Sin categoría" ? 1 : b === "Sin categoría" ? -1 : a.localeCompare(b)));
+}
+
+function KpiCard({
+  label,
+  value,
+  accent,
+  icon: Icon,
+}: {
+  label: string;
+  value: string;
+  accent: string;
+  icon?: (props: { className?: string }) => React.ReactElement;
+}) {
+  return (
+    <div className="bg-panel border border-line rounded-tag shadow-card px-4 py-4">
+      {Icon && (
+        <div className={`w-8 h-8 rounded-tag flex items-center justify-center mb-3 bg-${accent}/10`}>
+          <Icon className={`text-${accent}`} />
+        </div>
+      )}
+      <p className={`font-display font-bold text-2xl text-${accent}`}>{value}</p>
+      <p className="text-xs text-steel mt-1">{label}</p>
+    </div>
+  );
 }
 
 function Field({

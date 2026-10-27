@@ -133,7 +133,7 @@ export default function Mantenimiento() {
           <h1 className="font-display font-bold text-3xl text-ink">Mantenimiento preventivo</h1>
           <p className="text-xs text-steel mt-1 max-w-md">
             Acá definís la regla ("cada X días hacer tal cosa"). Cuando llegue el momento, usá
-            "crear orden de trabajo" para generar el ticket real en Órdenes.
+            "crear orden de trabajo" para generar el ticket real, gestionable desde el detalle del equipo en Inventario.
           </p>
         </div>
         {canWrite(role) && (
@@ -209,7 +209,7 @@ export default function Mantenimiento() {
                   {canWrite(role) && (
                     <>
                       {orderCreatedFor === s.id ? (
-                        <Link href="/ordenes" className="focus-ring text-xs text-ok font-mono hover:underline">
+                        <Link href={`/inventario/detalle?id=${s.machine_id}`} className="focus-ring text-xs text-ok font-mono hover:underline">
                           ✓ orden creada — ver →
                         </Link>
                       ) : (

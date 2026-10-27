@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import Link from "next/link";
-import { Job, JobExpense, JobMachine, JobLogEntry, Machine, JobStatus, JobWorker, Contact, JobPayment, JobInvoice, JobWip, WorkOrder } from "@/lib/types";
+import { Job, JobExpense, JobMachine, JobLogEntry, Machine, JobStatus, JobWorker, Contact, JobPayment, JobInvoice, JobBudgetItem, JobWip, WorkOrder } from "@/lib/types";
 import StatusBadge from "@/components/StatusBadge";
 import ContactPicker from "@/components/ContactPicker";
 import { CURRENCIES, toReference, formatMoney } from "@/lib/currency";
@@ -39,6 +39,7 @@ function ObraDetalleInner() {
   const [loading, setLoading] = useState(true);
   const [payments, setPayments] = useState<JobPayment[]>([]);
   const [invoices, setInvoices] = useState<JobInvoice[]>([]);
+  const [budgetItems, setBudgetItems] = useState<JobBudgetItem[]>([]);
   const [relatedOrders, setRelatedOrders] = useState<WorkOrder[]>([]);
   const [wip, setWip] = useState<JobWip | null>(null);
   const [refCurrency, setRefCurrency] = useState("USD");
@@ -50,8 +51,16 @@ function ObraDetalleInner() {
   const [invCurrency, setInvCurrency] = useState("ARS");
   const [invFx, setInvFx] = useState("1");
   const [invNote, setInvNote] = useState("");
+  const [invPhotoUrl, setInvPhotoUrl] = useState<string | null>(null);
+  const [uploadingInvPhoto, setUploadingInvPhoto] = useState(false);
   const [expenseCurrency, setExpenseCurrency] = useState("ARS");
   const [expenseFx, setExpenseFx] = useState("1");
+  const [itemDesc, setItemDesc] = useState("");
+  const [itemQty, setItemQty] = useState("1");
+  const [itemPrice, setItemPrice] = useState("");
+  const [itemCurrency, setItemCurrency] = useState("ARS");
+  const [itemFx, setItemFx] = useState("1");
+  const [itemError, setItemError] = useState("");
 
   const [expenseDesc, setExpenseDesc] = useState("");
   const [expenseAmount, setExpenseAmount] = useState("");
@@ -71,7 +80,7 @@ function ObraDetalleInner() {
   const [noteError, setNoteError] = useState("");
 
   async function loadAll() {
-    const [jobRes, expRes, assignedRes, machRes, logRes, workersRes, payRes, invRes, ordersRes, wipRes, settingsRes, compRes] = await Promise.all([
+    const [jobRes, expRes, assignedRes, machRes, logRes, workersRes, payRes, invRes, itemsRes, ordersRes, wipRes, settingsRes, compRes] = await Promise.all([
       supabase.from("jobs").select("*").eq("id", id).single(),
       supabase.from("job_expenses").select("*").eq("job_id", id).order("created_at", { ascending: false }),
       supabase.from("job_machines").select("*, machine:machines(*)").eq("job_id", id).is("returned_at", null),
@@ -80,6 +89,7 @@ function ObraDetalleInner() {
       supabase.from("job_workers").select("*").eq("job_id", id).order("created_at", { ascending: true }),
       supabase.from("job_payments").select("*").eq("job_id", id).order("paid_at", { ascending: false }),
       supabase.from("job_invoices").select("*").eq("job_id", id).order("invoiced_at", { ascending: false }),
+      supabase.from("job_budget_items").select("*").eq("job_id", id).order("created_at", { ascending: true }),
       supabase.from("work_orders").select("*, machine:machines(*)").eq("job_id", id).order("created_at", { ascending: false }),
       supabase.from("job_wip").select("*").eq("job_id", id).maybeSingle(),
       supabase.from("settings").select("*").eq("key", "reference_currency").single(),
@@ -93,6 +103,7 @@ function ObraDetalleInner() {
     setWorkers(workersRes.data ?? []);
     setPayments(payRes.data ?? []);
     setInvoices(invRes.data ?? []);
+    setBudgetItems((itemsRes.data as JobBudgetItem[]) ?? []);
     setRelatedOrders((ordersRes.data as WorkOrder[]) ?? []);
     setWip((wipRes.data as JobWip) ?? null);
     if (settingsRes.data) setRefCurrency(settingsRes.data.value);
@@ -221,6 +232,7 @@ function ObraDetalleInner() {
           currency: invCurrency,
           fx_rate: invFx ? Number(invFx) : 1,
           note: invNote,
+          invoice_photo_url: invPhotoUrl,
         }),
       setInvoiceError
     );
@@ -228,6 +240,53 @@ function ObraDetalleInner() {
     await logAudit("job_invoice", id, "factura registrada", `${invAmount} ${invCurrency}${invNote ? ` — ${invNote}` : ""}`);
     setInvAmount("");
     setInvNote("");
+    setInvPhotoUrl(null);
+    loadAll();
+  }
+
+  async function handleInvoicePhotoManual(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !companyId) return;
+    setUploadingInvPhoto(true);
+    try {
+      const ext = file.name.split(".").pop() || "jpg";
+      const path = `${companyId}/${id}/${Date.now()}.${ext}`;
+      const { error } = await supabase.storage.from("facturas").upload(path, file);
+      if (!error) setInvPhotoUrl(path);
+    } finally {
+      setUploadingInvPhoto(false);
+    }
+  }
+
+  async function addBudgetItem(e: React.FormEvent) {
+    e.preventDefault();
+    if (!itemDesc.trim() || !itemPrice) return;
+    const ok = await runMutation(
+      () =>
+        supabase.from("job_budget_items").insert({
+          job_id: id,
+          description: itemDesc,
+          quantity: itemQty ? Number(itemQty) : 1,
+          unit_price: Number(itemPrice),
+          currency: itemCurrency,
+          fx_rate: itemFx ? Number(itemFx) : 1,
+        }),
+      setItemError
+    );
+    if (!ok) return;
+    await logAudit("job_budget_item", id, "ítem de presupuesto agregado", `${itemDesc} x${itemQty || 1}`);
+    setItemDesc("");
+    setItemQty("1");
+    setItemPrice("");
+    loadAll();
+  }
+
+  async function removeBudgetItem(itemId: string, desc: string) {
+    setItemError("");
+    const ok = await runMutation(() => supabase.from("job_budget_items").delete().eq("id", itemId), setItemError);
+    if (!ok) return;
+    await logAudit("job_budget_item", id, "ítem de presupuesto quitado", desc);
     loadAll();
   }
 
@@ -306,6 +365,7 @@ function ObraDetalleInner() {
   const paidRef = payments.reduce((sum, p) => sum + toReference(Number(p.amount), Number(p.fx_rate)), 0);
   const invoicedRef = invoices.reduce((sum, inv) => sum + toReference(Number(inv.amount), Number(inv.fx_rate)), 0);
   const pendingRef = budgetRef - paidRef;
+  const budgetItemsTotalRef = budgetItems.reduce((sum, it) => sum + toReference(it.quantity * it.unit_price, it.fx_rate), 0);
   const pctCost = budgetRef > 0 ? Math.min(100, Math.round((spentRef / budgetRef) * 100)) : 0;
   const pctPaid = budgetRef > 0 ? Math.min(100, Math.round((paidRef / budgetRef) * 100)) : 0;
 
@@ -489,12 +549,81 @@ function ObraDetalleInner() {
         )}
       </section>
 
+      {/* Repuestos y presupuesto */}
+      <section className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6">
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="font-display font-bold text-sm">Repuestos y presupuesto</h2>
+          {budgetItems.length > 0 && (
+            <span className="serial">total: {formatMoney(budgetItemsTotalRef, refCurrency)}</span>
+          )}
+        </div>
+        <p className="text-[11px] text-steel font-mono mb-3">
+          Calculadora de materiales y mano de obra para armar o validar el presupuesto — no reemplaza el campo "Presupuesto" de arriba, lo ayuda a construir.
+        </p>
+        {canWrite(role) && (
+          <>
+            <form onSubmit={addBudgetItem} className="grid grid-cols-2 sm:grid-cols-6 gap-2 mb-4">
+              <input
+                className="focus-ring col-span-2 sm:col-span-2 border border-line rounded-tag px-3 py-1.5 text-sm"
+                placeholder="Material o trabajo"
+                value={itemDesc}
+                onChange={(e) => setItemDesc(e.target.value)}
+              />
+              <input
+                className="focus-ring border border-line rounded-tag px-3 py-1.5 text-sm"
+                placeholder="Cant."
+                type="number"
+                value={itemQty}
+                onChange={(e) => setItemQty(e.target.value)}
+              />
+              <input
+                className="focus-ring border border-line rounded-tag px-3 py-1.5 text-sm"
+                placeholder="Precio unit."
+                type="number"
+                value={itemPrice}
+                onChange={(e) => setItemPrice(e.target.value)}
+              />
+              <select className="focus-ring border border-line rounded-tag px-2 py-1.5 text-sm bg-white" value={itemCurrency} onChange={(e) => setItemCurrency(e.target.value)}>
+                {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <FxRateField className="col-span-2 sm:col-span-6" amount={itemPrice} currency={itemCurrency} refCurrency={refCurrency} fxRate={itemFx} onFxRateChange={setItemFx} />
+              <button className="focus-ring col-span-2 sm:col-span-6 bg-ink text-white text-sm py-1.5 rounded-tag">Agregar ítem</button>
+            </form>
+            <FormError message={itemError} />
+          </>
+        )}
+        {budgetItems.length === 0 ? (
+          <p className="text-sm text-steel">Sin ítems cargados todavía.</p>
+        ) : (
+          <ul className="space-y-1 text-xs text-steel">
+            {budgetItems.map((it) => (
+              <li key={it.id} className="flex justify-between items-center border-b border-line pb-1">
+                <span>{it.description} <span className="font-mono">x{it.quantity}</span></span>
+                <span className="flex items-center gap-2">
+                  <span className="serial">{formatMoney(it.quantity * it.unit_price, it.currency)}</span>
+                  {canWrite(role) && (
+                    <button onClick={() => removeBudgetItem(it.id, it.description)} className="focus-ring text-warn hover:underline">
+                      quitar
+                    </button>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
       {/* Facturación */}
       <section className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6">
         <h2 className="font-display font-bold text-sm mb-3">Facturado al cliente</h2>
         <p className="text-[11px] text-steel font-mono mb-3">Distinto de "cobrado": esto es lo que ya se facturó, cobrado o no.</p>
         {canWrite(role) && (
           <>
+            <label className="focus-ring inline-flex items-center gap-1.5 text-xs text-accent font-mono hover:underline mb-2 cursor-pointer">
+              📎 {uploadingInvPhoto ? "Subiendo..." : "Adjuntar foto/escaneo de la factura (opcional)"}
+              <input type="file" accept="image/*,application/pdf" className="hidden" onChange={handleInvoicePhotoManual} disabled={uploadingInvPhoto} />
+            </label>
+            {invPhotoUrl && <p className="text-[11px] text-ok mb-2">Archivo adjunto — se guarda al registrar la factura.</p>}
             <form onSubmit={addInvoice} className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
               <input
                 className="focus-ring border border-line rounded-tag px-3 py-1.5 text-sm"
@@ -521,7 +650,14 @@ function ObraDetalleInner() {
         <div className="space-y-1">
           {invoices.map((inv) => (
             <div key={inv.id} className="flex justify-between text-xs text-steel border-b border-line pb-1">
-              <span>{inv.invoiced_at} {inv.note && `· ${inv.note}`}</span>
+              <span>
+                {inv.invoiced_at} {inv.note && `· ${inv.note}`}
+                {inv.invoice_photo_url && (
+                  <button onClick={() => verFactura(inv.invoice_photo_url!)} className="focus-ring ml-1.5 text-accent hover:underline">
+                    📎 ver factura
+                  </button>
+                )}
+              </span>
               <span className="serial">{formatMoney(Number(inv.amount), inv.currency)}</span>
             </div>
           ))}
@@ -690,19 +826,16 @@ function ObraDetalleInner() {
       {/* Órdenes de trabajo vinculadas */}
       {relatedOrders.length > 0 && (
         <section className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="font-display font-bold text-sm">Órdenes de trabajo de esta obra</h2>
-            <Link href="/ordenes" className="text-xs text-accent font-mono hover:underline">ver todas →</Link>
-          </div>
+          <h2 className="font-display font-bold text-sm mb-3">Órdenes de trabajo de esta obra</h2>
           <div className="space-y-2">
             {relatedOrders.map((o) => (
-              <div key={o.id} className="flex items-center justify-between text-sm border-b border-line pb-2">
+              <Link key={o.id} href={`/inventario/detalle?id=${o.machine_id}`} className="focus-ring flex items-center justify-between text-sm border-b border-line pb-2 hover:underline">
                 <div>
                   <span className="font-medium text-ink">{o.title}</span>
                   <span className="text-xs text-steel ml-2">{o.machine?.name}</span>
                 </div>
                 <StatusBadge status={o.status} />
-              </div>
+              </Link>
             ))}
           </div>
         </section>

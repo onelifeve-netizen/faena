@@ -204,6 +204,19 @@ export interface JobInvoice {
   fx_rate: number;
   invoiced_at: string;
   note: string | null;
+  invoice_photo_url: string | null;
+  created_at: string;
+}
+
+export interface JobBudgetItem {
+  id: string;
+  company_id: string;
+  job_id: string;
+  description: string;
+  quantity: number;
+  unit_price: number;
+  currency: string;
+  fx_rate: number;
   created_at: string;
 }
 

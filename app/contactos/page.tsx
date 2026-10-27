@@ -110,10 +110,10 @@ function ContactosInner() {
         <form onSubmit={addContact} className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6 grid grid-cols-2 gap-3">
           <Field label="Nombre completo" value={name} onChange={setName} placeholder="Juan Pérez" required />
           <Field label="Rol" value={role} onChange={setRole} placeholder="Cliente, electricista, proveedor..." />
-          <Field label="Celular" value={phone} onChange={setPhone} placeholder="+54 9 11 1234-5678" />
+          <Field label="Celular" value={phone} onChange={setPhone} placeholder="Ej: código de país + número" />
           <Field label="Email (opcional)" value={email} onChange={setEmail} type="email" placeholder="juan@empresa.com" />
           <div className="col-span-2">
-            <Field label="Ubicación" value={location} onChange={setLocation} placeholder="Zárate, Buenos Aires" />
+            <Field label="Ubicación" value={location} onChange={setLocation} placeholder="Ciudad, provincia/estado" />
           </div>
           <div className="col-span-2">
             <button type="submit" className="focus-ring bg-accent text-white text-sm px-4 py-2 rounded-tag hover:opacity-90">

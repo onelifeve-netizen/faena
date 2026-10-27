@@ -130,7 +130,7 @@ export default function NuevaObra() {
         <Field label="Nombre de la obra" value={name} onChange={setName} placeholder="Ampliación planta norte" required />
         <div className="grid grid-cols-2 gap-4">
           <Field label="Cliente" value={client} onChange={setClient} placeholder="Constructora XYZ" />
-          <Field label="Ubicación" value={location} onChange={setLocation} placeholder="Zárate, Buenos Aires" />
+          <Field label="Ubicación" value={location} onChange={setLocation} placeholder="Ciudad, provincia/estado" />
         </div>
         <div className="grid grid-cols-2 gap-4">
           <Field label="Fecha de inicio" value={startDate} onChange={setStartDate} type="date" />
