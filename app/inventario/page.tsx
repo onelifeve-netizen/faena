@@ -14,6 +14,7 @@ import { CURRENCIES, toReference, formatMoney } from "@/lib/currency";
 import FxRateField from "@/components/FxRateField";
 import DonutChart from "@/components/DonutChart";
 import { IconBox } from "@/components/Icons";
+import ExcelImport from "@/components/ExcelImport";
 import { useMyRole, canWrite } from "@/lib/roles";
 
 const CHART_COLORS = ["#6D28D9", "#F4C430", "#2E86AB", "#E07A5F", "#81B29A", "#A34A22", "#3D5A80"];
@@ -29,6 +30,7 @@ export default function Inventario() {
   const [machines, setMachines] = useState<Machine[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [name, setName] = useState("");
   const [category, setCategory] = useState("");
   const [itemType, setItemType] = useState("equipo");
@@ -196,14 +198,23 @@ export default function Inventario() {
           <h1 className="font-display font-bold text-3xl text-ink">Inventario</h1>
         </div>
         {canWrite(role) && (
-          <button
-            onClick={() => setShowForm((s) => !s)}
-            className="focus-ring bg-ink text-white text-sm px-4 py-2 rounded-tag hover:bg-ink/90 transition-colors"
-          >
-            {showForm ? "Cancelar" : "+ Agregar artículo"}
-          </button>
+          <div className="flex items-center gap-3">
+            <button onClick={() => setShowImport((s) => !s)} className="focus-ring text-xs text-accent font-mono hover:underline">
+              {showImport ? "cerrar importación" : "importar desde Excel"}
+            </button>
+            <button
+              onClick={() => setShowForm((s) => !s)}
+              className="focus-ring bg-ink text-white text-sm px-4 py-2 rounded-tag hover:bg-ink/90 transition-colors"
+            >
+              {showForm ? "Cancelar" : "+ Agregar artículo"}
+            </button>
+          </div>
         )}
       </header>
+
+      {showImport && canWrite(role) && (
+        <ExcelImport zones={zones} onDone={load} onClose={() => setShowImport(false)} />
+      )}
 
       {showForm && canWrite(role) && (
         <form onSubmit={addMachine} className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6 grid grid-cols-1 sm:grid-cols-3 gap-3">
