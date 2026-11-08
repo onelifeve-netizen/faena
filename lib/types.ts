@@ -1,4 +1,5 @@
 export type MachineStatus = "disponible" | "en_obra" | "mantenimiento";
+export type ItemType = "equipo" | "accesorio" | "repuesto" | "herramienta" | "consumible";
 export type JobStatus = "planificada" | "en_curso" | "terminada";
 
 export interface Company {
@@ -14,6 +15,7 @@ export interface Machine {
   company_id: string;
   name: string;
   category: string | null;
+  item_type: ItemType;
   location: string | null;
   serial: string | null;
   status: MachineStatus;

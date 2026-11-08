@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-import { Machine, MachineStatus } from "@/lib/types";
+import { Machine, MachineStatus, ItemType } from "@/lib/types";
+import { ITEM_TYPES, ITEM_TYPE_LABELS } from "@/lib/itemTypes";
+import ItemTypeGlossary from "@/components/ItemTypeGlossary";
 import StatusBadge from "@/components/StatusBadge";
 import FormError from "@/components/FormError";
 import { logAudit } from "@/lib/audit";
@@ -29,10 +31,12 @@ export default function Inventario() {
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");
   const [category, setCategory] = useState("");
+  const [itemType, setItemType] = useState<ItemType>("equipo");
   const [location, setLocation] = useState("");
   const [serial, setSerial] = useState("");
   const [locationFilter, setLocationFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState<ItemType | "">("");
   const [purchasePrice, setPurchasePrice] = useState("");
   const [purchaseCurrency, setPurchaseCurrency] = useState("ARS");
   const [purchaseFx, setPurchaseFx] = useState("1");
@@ -67,6 +71,7 @@ export default function Inventario() {
           .insert({
             name,
             category,
+            item_type: itemType,
             location,
             serial,
             status: "disponible",
@@ -87,6 +92,7 @@ export default function Inventario() {
     if (newId) await logAudit("machine", newId, "creado", `Se agregó "${name}" al inventario`);
     setName("");
     setCategory("");
+    setItemType("equipo");
     setLocation("");
     setSerial("");
     setPurchasePrice("");
@@ -103,6 +109,7 @@ export default function Inventario() {
   const filteredMachines = machines
     .filter((m) => !locationFilter || m.location === locationFilter)
     .filter((m) => !categoryFilter || m.category === categoryFilter)
+    .filter((m) => !typeFilter || m.item_type === typeFilter)
     .sort((a, b) => (a.category || "zzz").localeCompare(b.category || "zzz") || a.name.localeCompare(b.name));
 
   async function changeStatus(id: string, status: MachineStatus, name: string) {
@@ -133,6 +140,12 @@ export default function Inventario() {
       {showForm && canWrite(role) && (
         <form onSubmit={addMachine} className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6 grid grid-cols-1 sm:grid-cols-3 gap-3">
           <Field label="Nombre" value={name} onChange={setName} placeholder="Retroexcavadora, andamio, bolsas de cemento..." required />
+          <label className="text-xs text-steel">
+            Tipo <ItemTypeGlossary />
+            <select className="focus-ring mt-1 w-full border border-line rounded-tag px-3 py-2 text-sm bg-white" value={itemType} onChange={(e) => setItemType(e.target.value as ItemType)}>
+              {ITEM_TYPES.map((t) => <option key={t} value={t}>{ITEM_TYPE_LABELS[t]}</option>)}
+            </select>
+          </label>
           <Field label="Categoría" value={category} onChange={setCategory} placeholder="La que uses en tu rubro: Maquinaria, Repuesto, Insumo..." />
           <Field label="Ubicación" value={location} onChange={setLocation} placeholder="Patio, almacén, nave..." />
           <Field label="N.° de serie o código" value={serial} onChange={setSerial} placeholder="Opcional" />
@@ -196,6 +209,17 @@ export default function Inventario() {
               size={84}
             />
             <div className="flex flex-wrap gap-3 flex-1">
+              <label className="text-xs text-steel">
+                Tipo
+                <select
+                  className="focus-ring mt-1 block border border-line rounded-tag px-3 py-1.5 text-sm bg-white"
+                  value={typeFilter}
+                  onChange={(e) => setTypeFilter(e.target.value as ItemType | "")}
+                >
+                  <option value="">Todos</option>
+                  {ITEM_TYPES.map((t) => <option key={t} value={t}>{ITEM_TYPE_LABELS[t]}</option>)}
+                </select>
+              </label>
               {categories.length > 0 && (
                 <label className="text-xs text-steel">
                   Categoría
@@ -253,7 +277,10 @@ export default function Inventario() {
                 {items.map((m) => (
                   <div key={m.id} className={`asset-tag status-${m.status} px-5 py-4 flex items-center justify-between`}>
                     <Link href={`/inventario/detalle?id=${m.id}`} className="focus-ring">
-                      <p className="font-semibold text-sm text-ink hover:underline">{m.name}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-sm text-ink hover:underline">{m.name}</p>
+                        <span className="badge bg-steel/10 text-steel">{ITEM_TYPE_LABELS[m.item_type]}</span>
+                      </div>
                       <p className="text-xs text-steel mt-0.5">
                         {m.location ? <span>{m.location} · </span> : <span className="text-steel/50">sin ubicación · </span>}
                         <span className="serial">{m.serial || "sin N.° de serie"}</span>
