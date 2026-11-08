@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion, Variants } from "framer-motion";
 import { supabase } from "@/lib/supabase";
-import { Machine, Job, WorkOrder, MaintenanceSchedule, JobWip, JobRequirement } from "@/lib/types";
+import { Machine, Job, MaintenanceSchedule, JobWip, JobRequirement, ToolConditionLog } from "@/lib/types";
 import StatusBadge from "@/components/StatusBadge";
 import { IconBox, IconBuilding, IconClipboard, IconWrench } from "@/components/Icons";
 import DonutChart from "@/components/DonutChart";
@@ -26,30 +26,30 @@ const stagger: Variants = {
 export default function Dashboard() {
   const [machines, setMachines] = useState<Machine[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [openOrders, setOpenOrders] = useState<WorkOrder[]>([]);
   const [schedules, setSchedules] = useState<MaintenanceSchedule[]>([]);
   const [wip, setWip] = useState<JobWip[]>([]);
   const [requirements, setRequirements] = useState<JobRequirement[]>([]);
+  const [conditionLogs, setConditionLogs] = useState<ToolConditionLog[]>([]);
   const [refCurrency, setRefCurrency] = useState("USD");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
-      const [m, j, wo, ms, wipRes, settingsRes, reqRes] = await Promise.all([
+      const [m, j, ms, wipRes, settingsRes, reqRes, condRes] = await Promise.all([
         supabase.from("machines").select("*"),
         supabase.from("jobs").select("*").order("created_at", { ascending: false }),
-        supabase.from("work_orders").select("*, machine:machines(*)").neq("status", "cerrada"),
         supabase.from("maintenance_schedules").select("*, machine:machines(*)").eq("active", true),
         supabase.from("job_wip").select("*"),
         supabase.from("settings").select("*").eq("key", "reference_currency").single(),
         supabase.from("job_requirements").select("*"),
+        supabase.from("tool_condition_logs").select("*").order("created_at", { ascending: false }),
       ]);
       setMachines(m.data ?? []);
       setJobs(j.data ?? []);
       setRequirements((reqRes.data as JobRequirement[]) ?? []);
-      setOpenOrders((wo.data as WorkOrder[]) ?? []);
       setSchedules((ms.data as MaintenanceSchedule[]) ?? []);
       setWip((wipRes.data as JobWip[]) ?? []);
+      setConditionLogs((condRes.data as ToolConditionLog[]) ?? []);
       if (settingsRes.data) setRefCurrency(settingsRes.data.value);
       setLoading(false);
     }
@@ -78,6 +78,12 @@ export default function Dashboard() {
 
   const enObra = machines.filter((m) => m.status === "en_obra").length;
 
+  const latestConditionByMachine = new Map<string, ToolConditionLog>();
+  for (const log of conditionLogs) {
+    if (!latestConditionByMachine.has(log.machine_id)) latestConditionByMachine.set(log.machine_id, log);
+  }
+  const aReponer = Array.from(latestConditionByMachine.values()).filter((l) => l.condition === "reponer").length;
+
   const jobsWithMissing = jobs
     .filter((j) => j.status !== "terminada")
     .map((j) => ({ job: j, missing: jobMissingCount(requirements.filter((r) => r.job_id === j.id), machines) }))
@@ -97,7 +103,7 @@ export default function Dashboard() {
           <motion.div variants={stagger} initial="hidden" animate="show" className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <StatCard label="Equipos disponibles" value={disponibles} accent="ok" icon={IconBox} href="/inventario" emptyCta="+ agregar el primer equipo" />
             <StatCard label="Obras en curso" value={activas} accent="accent" icon={IconBuilding} href="/obras" emptyCta="+ crear la primera obra" />
-            <StatCard label="Órdenes de trabajo abiertas" value={openOrders.length} accent="info" icon={IconClipboard} href="/inventario" emptyCta="+ crear una orden" />
+            <StatCard label="Herramientas a reponer" value={aReponer} accent={aReponer > 0 ? "warn" : "ok"} icon={IconClipboard} href="/inventario" emptyCta="todo en buen estado" />
             <StatCard label="Preventivos vencidos" value={vencidas.length} accent={vencidas.length > 0 ? "warn" : "ok"} icon={IconWrench} href="/mantenimiento" emptyCta="programar un mantenimiento" />
           </motion.div>
 
