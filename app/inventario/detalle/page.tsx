@@ -65,9 +65,14 @@ function InventarioDetalleInner() {
   const [zones, setZones] = useState<Location[]>([]);
   const [zoneError, setZoneError] = useState("");
   const [currentJob, setCurrentJob] = useState<{ id: string; name: string } | null>(null);
+  const [accessories, setAccessories] = useState<Machine[]>([]);
+  const [unlinkedMachines, setUnlinkedMachines] = useState<Machine[]>([]);
+  const [linkAccessoryId, setLinkAccessoryId] = useState("");
+  const [newAccessoryName, setNewAccessoryName] = useState("");
+  const [accessoryError, setAccessoryError] = useState("");
 
   async function load() {
-    const [machRes, ordersRes, schedRes, depRes, specsRes, photosRes, compRes, zonesRes, jmRes] = await Promise.all([
+    const [machRes, ordersRes, schedRes, depRes, specsRes, photosRes, compRes, zonesRes, jmRes, accRes, unlinkedRes] = await Promise.all([
       supabase.from("machines").select("*, location_obj:locations(*)").eq("id", id).single(),
       supabase.from("work_orders").select("*").eq("machine_id", id).order("created_at", { ascending: false }),
       supabase.from("maintenance_schedules").select("*").eq("machine_id", id).order("next_due_at", { ascending: true }),
@@ -77,10 +82,14 @@ function InventarioDetalleInner() {
       supabase.from("companies").select("id").maybeSingle(),
       supabase.from("locations").select("*").order("name"),
       supabase.from("job_machines").select("job:jobs(id, name)").eq("machine_id", id).is("returned_at", null).maybeSingle(),
+      supabase.from("machines").select("*").eq("parent_machine_id", id).order("name"),
+      supabase.from("machines").select("*").is("parent_machine_id", null).neq("id", id).order("name"),
     ]);
     if (compRes.data) setCompanyId(compRes.data.id);
     setZones((zonesRes.data as Location[]) ?? []);
     setCurrentJob((jmRes.data as any)?.job ?? null);
+    setAccessories((accRes.data as Machine[]) ?? []);
+    setUnlinkedMachines((unlinkedRes.data as Machine[]) ?? []);
     const photoList = (photosRes.data as MachinePhoto[]) ?? [];
     setPhotos(photoList);
     if (photoList.length > 0) {
@@ -186,6 +195,46 @@ function InventarioDetalleInner() {
     if (!ok) return;
     const zoneName = zones.find((z) => z.id === zoneId)?.name ?? "sin zona";
     await logAudit("machine", id, "zona cambiada", `"${machine?.name}" → ${zoneName}`);
+    load();
+  }
+
+  async function linkAccessory() {
+    if (!linkAccessoryId) return;
+    setAccessoryError("");
+    const ok = await runMutation(() => supabase.from("machines").update({ parent_machine_id: id }).eq("id", linkAccessoryId), setAccessoryError);
+    if (!ok) return;
+    const accName = unlinkedMachines.find((m) => m.id === linkAccessoryId)?.name ?? "";
+    await logAudit("machine", linkAccessoryId, "vinculado como accesorio", `"${accName}" vinculado a "${machine?.name}"`);
+    setLinkAccessoryId("");
+    load();
+  }
+
+  async function createAccessory(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newAccessoryName.trim()) return;
+    setAccessoryError("");
+    const ok = await runMutation(
+      () =>
+        supabase.from("machines").insert({
+          name: newAccessoryName.trim(),
+          item_type: "accesorio",
+          status: machine?.status ?? "disponible",
+          location_id: machine?.location_id ?? null,
+          parent_machine_id: id,
+        }),
+      setAccessoryError
+    );
+    if (!ok) return;
+    await logAudit("machine", id, "accesorio creado", `"${newAccessoryName.trim()}" creado para "${machine?.name}"`);
+    setNewAccessoryName("");
+    load();
+  }
+
+  async function unlinkAccessory(acc: Machine) {
+    setAccessoryError("");
+    const ok = await runMutation(() => supabase.from("machines").update({ parent_machine_id: null }).eq("id", acc.id), setAccessoryError);
+    if (!ok) return;
+    await logAudit("machine", acc.id, "desvinculado de equipo", `"${acc.name}" ya no depende de "${machine?.name}"`);
     load();
   }
 
@@ -520,6 +569,70 @@ function InventarioDetalleInner() {
           </>
         )}
         <FormError message={specError} />
+      </section>
+
+      {/* Accesorios */}
+      <section className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6">
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="font-display font-bold text-sm">Accesorios</h2>
+          {accessories.length > 0 && (
+            <span className="serial">
+              {accessories.filter((a) => a.status === "disponible").length} disponibles / {accessories.length} en total
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-steel mb-3">
+          Equipos que van siempre junto a este (baldes, palas, acoples...). Al asignar o devolver este
+          equipo de una obra, se puede incluirlos.
+        </p>
+        {accessories.length === 0 ? (
+          <p className="text-sm text-steel mb-3">Sin accesorios vinculados todavía.</p>
+        ) : (
+          <div className="space-y-1.5 mb-3">
+            {accessories.map((a) => (
+              <div key={a.id} className="flex items-center justify-between text-sm border-b border-line pb-1.5">
+                <Link href={`/inventario/detalle?id=${a.id}`} className="focus-ring hover:underline">
+                  {a.name}
+                </Link>
+                <div className="flex items-center gap-2">
+                  <StatusBadge status={a.status} />
+                  {canWrite(role) && (
+                    <button onClick={() => unlinkAccessory(a)} className="focus-ring text-xs text-warn font-mono hover:underline">
+                      desvincular
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {canWrite(role) && (
+          <>
+            <div className="flex gap-2 mb-2">
+              <select
+                className="focus-ring flex-1 border border-line rounded-tag px-3 py-1.5 text-sm bg-white"
+                value={linkAccessoryId}
+                onChange={(e) => setLinkAccessoryId(e.target.value)}
+              >
+                <option value="">Vincular artículo ya cargado...</option>
+                {unlinkedMachines.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+              <button onClick={linkAccessory} disabled={!linkAccessoryId} className="focus-ring text-xs bg-ink text-white px-3 rounded-tag disabled:opacity-40 shrink-0">
+                vincular
+              </button>
+            </div>
+            <form onSubmit={createAccessory} className="flex gap-2">
+              <input
+                className="focus-ring flex-1 border border-line rounded-tag px-3 py-1.5 text-sm"
+                placeholder="O creá un accesorio nuevo (ej: balde 80cm)"
+                value={newAccessoryName}
+                onChange={(e) => setNewAccessoryName(e.target.value)}
+              />
+              <button className="focus-ring text-xs bg-accent text-white px-3 rounded-tag shrink-0">+ crear</button>
+            </form>
+          </>
+        )}
+        <FormError message={accessoryError} />
       </section>
 
       {/* Línea de tiempo del equipo */}

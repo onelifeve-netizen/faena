@@ -305,6 +305,15 @@ function ObraDetalleInner() {
     const ok2 = await runMutation(() => supabase.from("machines").update({ status: "en_obra" }).eq("id", selectedMachine), setMachineError);
     if (!ok2) return;
     await logAudit("machine", selectedMachine, "asignado a obra", `"${machineName}" asignado a "${job?.name}"`);
+
+    // Los accesorios disponibles de este equipo viajan con él por defecto.
+    const { data: accs } = await supabase.from("machines").select("id, name").eq("parent_machine_id", selectedMachine).eq("status", "disponible");
+    for (const acc of accs ?? []) {
+      await supabase.from("job_machines").insert({ job_id: id, machine_id: acc.id });
+      await supabase.from("machines").update({ status: "en_obra" }).eq("id", acc.id);
+      await logAudit("machine", acc.id, "asignado a obra", `"${acc.name}" (accesorio de "${machineName}") asignado a "${job?.name}"`);
+    }
+
     setSelectedMachine("");
     loadAll();
   }
@@ -323,6 +332,24 @@ function ObraDetalleInner() {
     if (!ok2) return;
     const zoneName = zones.find((z) => z.id === zoneId)?.name;
     await logAudit("machine", machineId, "devuelto de obra", `"${machineName}" devuelto de "${job?.name}"${zoneName ? ` → ${zoneName}` : ""}`);
+
+    // Los accesorios de este equipo que estén en la misma obra vuelven con él.
+    const { data: accs } = await supabase.from("machines").select("id, name").eq("parent_machine_id", machineId);
+    if (accs && accs.length > 0) {
+      const { data: accJm } = await supabase
+        .from("job_machines")
+        .select("id, machine_id")
+        .eq("job_id", id)
+        .is("returned_at", null)
+        .in("machine_id", accs.map((a) => a.id));
+      for (const row of accJm ?? []) {
+        const accName = accs.find((a) => a.id === row.machine_id)?.name ?? "";
+        await supabase.from("job_machines").update({ returned_at: new Date().toISOString() }).eq("id", row.id);
+        await supabase.from("machines").update({ status: "disponible", location_id: zoneId || null }).eq("id", row.machine_id);
+        await logAudit("machine", row.machine_id, "devuelto de obra", `"${accName}" (accesorio de "${machineName}") devuelto de "${job?.name}"${zoneName ? ` → ${zoneName}` : ""}`);
+      }
+    }
+
     setReturningJobMachineId(null);
     setReturnZoneId("");
     loadAll();

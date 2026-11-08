@@ -30,6 +30,7 @@ export interface Machine {
   location_obj?: Location | null;
   serial: string | null;
   serial_photo_url: string | null;
+  parent_machine_id: string | null;
   status: MachineStatus;
   notes: string | null;
   created_at: string;
