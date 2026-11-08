@@ -4,11 +4,14 @@ import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { Location } from "@/lib/types";
 import { parseExcelFile, ParsedRow } from "@/lib/excelImport";
+type ColumnMapEntry = { header: string; field: string };
 import { logAudit } from "@/lib/audit";
 import FormError from "@/components/FormError";
 
 export default function ExcelImport({ zones, onDone, onClose }: { zones: Location[]; onDone: () => void; onClose: () => void }) {
   const [rows, setRows] = useState<ParsedRow[]>([]);
+  const [columnMap, setColumnMap] = useState<ColumnMapEntry[]>([]);
+  const [unmatchedHeaders, setUnmatchedHeaders] = useState<string[]>([]);
   const [parsing, setParsing] = useState(false);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState("");
@@ -23,7 +26,9 @@ export default function ExcelImport({ zones, onDone, onClose }: { zones: Locatio
     setParsing(true);
     try {
       const parsed = await parseExcelFile(file);
-      setRows(parsed);
+      setRows(parsed.rows);
+      setColumnMap(parsed.columnMap);
+      setUnmatchedHeaders(parsed.unmatchedHeaders);
     } catch {
       setError("No se pudo leer el archivo. Confirmá que sea un .xlsx, .xls o .csv válido.");
     } finally {
@@ -71,6 +76,8 @@ export default function ExcelImport({ zones, onDone, onClose }: { zones: Locatio
       await logAudit("machine", null, "importación desde Excel", `${toInsert.length} artículo(s) agregados`);
       setDone(toInsert.length);
       setRows([]);
+      setColumnMap([]);
+      setUnmatchedHeaders([]);
       onDone();
     } finally {
       setImporting(false);
@@ -108,6 +115,24 @@ export default function ExcelImport({ zones, onDone, onClose }: { zones: Locatio
           <FormError message={error} />
 
           {parsing && <p className="text-xs text-steel mt-2">Leyendo archivo...</p>}
+
+          {columnMap.length > 0 && (
+            <div className="mt-3 bg-base rounded-tag p-2.5">
+              <p className="text-[10px] text-steel uppercase tracking-wide font-mono mb-1.5">Columnas detectadas</p>
+              <div className="flex flex-wrap gap-1.5">
+                {columnMap.map((c) => (
+                  <span key={c.header} className="text-[11px] bg-white border border-line rounded-tag px-2 py-0.5">
+                    "{c.header}" → <span className="text-accent">{c.field}</span>
+                  </span>
+                ))}
+              </div>
+              {unmatchedHeaders.length > 0 && (
+                <p className="text-[11px] text-steel mt-1.5">
+                  Sin usar: {unmatchedHeaders.map((h) => `"${h}"`).join(", ")}
+                </p>
+              )}
+            </div>
+          )}
 
           {rows.length > 0 && (
             <div className="mt-3">
