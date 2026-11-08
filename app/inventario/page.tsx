@@ -39,6 +39,7 @@ export default function Inventario() {
   const [addingNewZone, setAddingNewZone] = useState(false);
   const [newZoneName, setNewZoneName] = useState("");
   const [manageZones, setManageZones] = useState(false);
+  const [showCostByZone, setShowCostByZone] = useState(false);
   const [zoneRenames, setZoneRenames] = useState<Record<string, string>>({});
   const [zoneError, setZoneError] = useState("");
   const [jobByMachine, setJobByMachine] = useState<Record<string, { id: string; name: string }>>({});
@@ -400,6 +401,15 @@ export default function Inventario() {
                   </select>
                 </label>
               )}
+              {zones.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowCostByZone((s) => !s)}
+                  className="focus-ring text-xs text-accent font-mono hover:underline self-end mb-1.5"
+                >
+                  {showCostByZone ? "ocultar costo por zona" : "ver costo por zona"}
+                </button>
+              )}
               {canWrite(role) && (
                 <button
                   type="button"
@@ -411,6 +421,37 @@ export default function Inventario() {
               )}
             </div>
           </div>
+
+          {showCostByZone && zones.length > 0 && (
+            <div className="bg-panel border border-line rounded-tag shadow-card p-4 mb-6">
+              <p className="text-xs text-steel uppercase tracking-wide font-mono mb-3">Valor de inventario por zona</p>
+              <div className="space-y-2">
+                {[...zones]
+                  .map((z) => {
+                    const items = machines.filter((m) => m.location_id === z.id);
+                    const total = items.reduce((sum, m) => sum + (m.purchase_price != null ? toReference(m.purchase_price, m.purchase_price_fx_rate) : 0), 0);
+                    return { zone: z, count: items.length, total };
+                  })
+                  .sort((a, b) => b.total - a.total)
+                  .map(({ zone, count, total }) => (
+                    <div key={zone.id} className="flex items-center justify-between text-sm">
+                      <span className="text-ink">{zone.name} <span className="text-xs text-steel font-mono">({count} ítems)</span></span>
+                      <span className="serial">{formatMoney(total, refCurrency)}</span>
+                    </div>
+                  ))}
+                {(() => {
+                  const sinZona = machines.filter((m) => !m.location_id);
+                  const total = sinZona.reduce((sum, m) => sum + (m.purchase_price != null ? toReference(m.purchase_price, m.purchase_price_fx_rate) : 0), 0);
+                  return sinZona.length > 0 ? (
+                    <div className="flex items-center justify-between text-sm text-steel pt-1 border-t border-line">
+                      <span>Sin zona asignada <span className="text-xs font-mono">({sinZona.length} ítems)</span></span>
+                      <span className="serial">{formatMoney(total, refCurrency)}</span>
+                    </div>
+                  ) : null;
+                })()}
+              </div>
+            </div>
+          )}
 
           {manageZones && canWrite(role) && (
             <div className="bg-panel border border-line rounded-tag shadow-card p-4 mb-6">
