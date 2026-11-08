@@ -282,6 +282,15 @@ function InventarioDetalleInner() {
     load();
   }
 
+  async function deleteTransferNote(note: TransferNote) {
+    if (!confirm("¿Anular esta guía de traslado? El link público dejará de funcionar.")) return;
+    setTransferError("");
+    const ok = await runMutation(() => supabase.from("transfer_notes").delete().eq("id", note.id), setTransferError);
+    if (!ok) return;
+    await logAudit("machine", id, "guía de traslado anulada", `"${machine?.name}" → ${note.to_location}`);
+    load();
+  }
+
   async function logCondition(e: React.FormEvent) {
     e.preventDefault();
     setConditionError("");
@@ -706,9 +715,16 @@ function InventarioDetalleInner() {
                     {" · "}
                     {new Date(t.created_at).toLocaleDateString("es-AR")}
                   </span>
-                  <a href={link} target="_blank" rel="noreferrer" className="focus-ring text-accent font-mono hover:underline shrink-0">
-                    ver →
-                  </a>
+                  <span className="flex items-center gap-2 shrink-0">
+                    <a href={link} target="_blank" rel="noreferrer" className="focus-ring text-accent font-mono hover:underline">
+                      ver →
+                    </a>
+                    {canWrite(role) && (
+                      <button onClick={() => deleteTransferNote(t)} className="focus-ring text-steel font-mono hover:text-warn hover:underline">
+                        anular
+                      </button>
+                    )}
+                  </span>
                 </div>
               );
             })}
