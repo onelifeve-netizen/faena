@@ -174,6 +174,7 @@ export default function Inventario() {
     load();
   }
 
+  const nameById = new Map(machines.map((m) => [m.id, m.name]));
   const categories = Array.from(new Set(machines.map((m) => m.category?.trim()).filter((c): c is string => !!c))).sort();
   const types = Array.from(new Set([...DEFAULT_ITEM_TYPES, ...machines.map((m) => m.item_type?.trim()).filter((t): t is string => !!t)]));
   const filteredMachines = machines
@@ -537,6 +538,9 @@ export default function Inventario() {
                         )}
                       </div>
                       <p className="text-xs text-steel mt-0.5">
+                        {m.parent_machine_id && (
+                          <span className="text-accent">↳ accesorio de {nameById.get(m.parent_machine_id) ?? "equipo eliminado"} · </span>
+                        )}
                         {m.location_obj?.name ? <span>{m.location_obj.name} · </span> : <span className="text-steel/50">sin zona · </span>}
                         <span className="serial">{m.serial || "sin N.° de serie"}</span>
                       </p>
