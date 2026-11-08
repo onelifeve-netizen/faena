@@ -30,6 +30,14 @@ export interface Machine {
   useful_life_years: number | null;
 }
 
+export interface MachinePhoto {
+  id: string;
+  company_id: string;
+  machine_id: string;
+  photo_url: string;
+  created_at: string;
+}
+
 export interface MachineSpec {
   id: string;
   company_id: string;

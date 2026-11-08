@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { Machine, WorkOrder, WorkOrderType, WorkOrderPriority, WorkOrderStatus, MaintenanceSchedule, MachineDepreciation, MachineSpec } from "@/lib/types";
+import { Machine, WorkOrder, WorkOrderType, WorkOrderPriority, WorkOrderStatus, MaintenanceSchedule, MachineDepreciation, MachineSpec, MachinePhoto } from "@/lib/types";
 import { itemTypeLabel } from "@/lib/itemTypes";
 import StatusBadge from "@/components/StatusBadge";
 import DepreciationChart from "@/components/DepreciationChart";
@@ -53,15 +53,37 @@ function InventarioDetalleInner() {
   const [closingOrderId, setClosingOrderId] = useState<string | null>(null);
   const [closeNote, setCloseNote] = useState("");
   const [closeCost, setCloseCost] = useState("");
+  const [photos, setPhotos] = useState<MachinePhoto[]>([]);
+  const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
+  const [companyId, setCompanyId] = useState("");
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [photoError, setPhotoError] = useState("");
 
   async function load() {
-    const [machRes, ordersRes, schedRes, depRes, specsRes] = await Promise.all([
+    const [machRes, ordersRes, schedRes, depRes, specsRes, photosRes, compRes] = await Promise.all([
       supabase.from("machines").select("*").eq("id", id).single(),
       supabase.from("work_orders").select("*").eq("machine_id", id).order("created_at", { ascending: false }),
       supabase.from("maintenance_schedules").select("*").eq("machine_id", id).order("next_due_at", { ascending: true }),
       supabase.from("machine_depreciation").select("*").eq("machine_id", id).maybeSingle(),
       supabase.from("machine_specs").select("*").eq("machine_id", id).order("created_at", { ascending: true }),
+      supabase.from("machine_photos").select("*").eq("machine_id", id).order("created_at", { ascending: false }),
+      supabase.from("companies").select("id").maybeSingle(),
     ]);
+    if (compRes.data) setCompanyId(compRes.data.id);
+    const photoList = (photosRes.data as MachinePhoto[]) ?? [];
+    setPhotos(photoList);
+    if (photoList.length > 0) {
+      const { data: signed } = await supabase.storage
+        .from("inventario-fotos")
+        .createSignedUrls(photoList.map((p) => p.photo_url), 3600);
+      const map: Record<string, string> = {};
+      (signed ?? []).forEach((s, i) => {
+        if (s.signedUrl) map[photoList[i].id] = s.signedUrl;
+      });
+      setPhotoUrls(map);
+    } else {
+      setPhotoUrls({});
+    }
     setMachine(machRes.data);
     setOrders(ordersRes.data ?? []);
     setSchedules(schedRes.data ?? []);
@@ -95,6 +117,38 @@ function InventarioDetalleInner() {
   useEffect(() => {
     if (id) load();
   }, [id]);
+
+  async function addPhoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !companyId) return;
+    setPhotoError("");
+    setUploadingPhoto(true);
+    try {
+      const ext = file.name.split(".").pop() || "jpg";
+      const path = `${companyId}/${id}/${Date.now()}.${ext}`;
+      const { error: uploadError } = await supabase.storage.from("inventario-fotos").upload(path, file);
+      if (uploadError) {
+        setPhotoError("No se pudo subir la foto.");
+        return;
+      }
+      const ok = await runMutation(() => supabase.from("machine_photos").insert({ machine_id: id, photo_url: path }), setPhotoError);
+      if (!ok) return;
+      await logAudit("machine_photo", id, "foto agregada", `Foto agregada a "${machine?.name}"`);
+      load();
+    } finally {
+      setUploadingPhoto(false);
+    }
+  }
+
+  async function removePhoto(photo: MachinePhoto) {
+    setPhotoError("");
+    await supabase.storage.from("inventario-fotos").remove([photo.photo_url]);
+    const ok = await runMutation(() => supabase.from("machine_photos").delete().eq("id", photo.id), setPhotoError);
+    if (!ok) return;
+    await logAudit("machine_photo", id, "foto quitada", `Foto quitada de "${machine?.name}"`);
+    load();
+  }
 
   async function addOrder(e: React.FormEvent) {
     e.preventDefault();
@@ -239,6 +293,43 @@ function InventarioDetalleInner() {
         </div>
         <StatusBadge status={machine.status} />
       </header>
+
+      {/* Fotos */}
+      <section className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-display font-bold text-sm">Fotos</h2>
+          {canWrite(role) && (
+            <label className="focus-ring text-xs text-accent font-mono hover:underline cursor-pointer">
+              {uploadingPhoto ? "Subiendo..." : "+ agregar foto"}
+              <input type="file" accept="image/*" className="hidden" onChange={addPhoto} disabled={uploadingPhoto} />
+            </label>
+          )}
+        </div>
+        <FormError message={photoError} />
+        {photos.length === 0 ? (
+          <p className="text-sm text-steel">Sin fotos cargadas todavía.</p>
+        ) : (
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+            {photos.map((p) => (
+              <div key={p.id} className="relative group">
+                {photoUrls[p.id] ? (
+                  <img src={photoUrls[p.id]} alt="" className="w-full aspect-square object-cover rounded-tag border border-line" />
+                ) : (
+                  <div className="w-full aspect-square bg-base rounded-tag border border-line" />
+                )}
+                {canWrite(role) && (
+                  <button
+                    onClick={() => removePhoto(p)}
+                    className="focus-ring absolute top-1 right-1 bg-ink/70 text-white text-[10px] px-1.5 py-0.5 rounded-tag opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    quitar
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       {/* Asistente de mantenimiento con IA */}
       <section className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6">
