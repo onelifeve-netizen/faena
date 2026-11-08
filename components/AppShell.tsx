@@ -5,6 +5,7 @@ import Link from "next/link";
 import UserMenu from "@/components/UserMenu";
 import Logo from "@/components/Logo";
 import SidebarNav from "@/components/SidebarNav";
+import PageTransition from "@/components/PageTransition";
 import { IconSettings } from "@/components/Icons";
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
@@ -62,7 +63,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <UserMenu />
       </aside>
 
-      <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-6xl min-w-0">{children}</main>
+      <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-6xl min-w-0">
+        <PageTransition>{children}</PageTransition>
+      </main>
     </div>
   );
 }

@@ -2,13 +2,25 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { motion, Variants } from "framer-motion";
 import { supabase } from "@/lib/supabase";
 import { Machine, Job, WorkOrder, MaintenanceSchedule, JobWip } from "@/lib/types";
 import StatusBadge from "@/components/StatusBadge";
 import { IconBox, IconBuilding, IconClipboard, IconWrench } from "@/components/Icons";
 import DonutChart from "@/components/DonutChart";
 import MaintenanceCalendar from "@/components/MaintenanceCalendar";
+import AnimatedNumber from "@/components/AnimatedNumber";
 import { formatMoney } from "@/lib/currency";
+
+const fadeUp: Variants = {
+  hidden: { opacity: 0, y: 14 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: "easeOut" } },
+};
+
+const stagger: Variants = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.07 } },
+};
 
 export default function Dashboard() {
   const [machines, setMachines] = useState<Machine[]>([]);
@@ -73,17 +85,18 @@ export default function Dashboard() {
         <p className="text-steel text-sm">Cargando...</p>
       ) : (
         <>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <motion.div variants={stagger} initial="hidden" animate="show" className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <StatCard label="Equipos disponibles" value={disponibles} accent="ok" icon={IconBox} href="/inventario" emptyCta="+ agregar el primer equipo" />
             <StatCard label="Obras en curso" value={activas} accent="accent" icon={IconBuilding} href="/obras" emptyCta="+ crear la primera obra" />
-            <StatCard label="Órdenes de trabajo abiertas" value={openOrders.length} accent="info" icon={IconClipboard} href="/ordenes" emptyCta="+ crear una orden" />
+            <StatCard label="Órdenes de trabajo abiertas" value={openOrders.length} accent="info" icon={IconClipboard} href="/inventario" emptyCta="+ crear una orden" />
             <StatCard label="Preventivos vencidos" value={vencidas.length} accent={vencidas.length > 0 ? "warn" : "ok"} icon={IconWrench} href="/mantenimiento" emptyCta="programar un mantenimiento" />
-          </div>
+          </motion.div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+          <motion.div variants={stagger} initial="hidden" animate="show" className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+            <motion.div variants={fadeUp} className="col-span-2">
             <Link
               href="/obras"
-              className="focus-ring col-span-2 relative overflow-hidden rounded-tag p-5 text-white block hover:opacity-95 transition-opacity"
+              className="focus-ring relative overflow-hidden rounded-tag p-5 text-white block hover:opacity-95 hover:-translate-y-0.5 transition-all duration-200"
               style={{ background: "linear-gradient(135deg, #12172B 0%, #3B2170 100%)" }}
             >
               <div className="absolute -right-6 -top-10 w-40 h-40 rounded-full bg-gold/10" />
@@ -108,8 +121,9 @@ export default function Dashboard() {
                 Se arma con los gastos, facturas y cobros de todas las obras en curso — ver el detalle de cada una en Obras →
               </p>
             </Link>
+            </motion.div>
 
-            <div className="bg-panel border border-line rounded-tag shadow-card p-5 flex flex-col">
+            <motion.div variants={fadeUp} className="bg-panel border border-line rounded-tag shadow-card p-5 flex flex-col hover:-translate-y-0.5 hover:shadow-md transition-all duration-200">
               <p className="text-xs uppercase tracking-wide font-mono text-steel mb-3">Estados de equipos</p>
               <DonutChart
                 size={96}
@@ -119,11 +133,11 @@ export default function Dashboard() {
                   { label: "Mantenimiento", value: enMantenimiento, color: "#D97706" },
                 ]}
               />
-            </div>
-          </div>
+            </motion.div>
+          </motion.div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <section>
+          <motion.div variants={stagger} initial="hidden" animate="show" className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <motion.section variants={fadeUp}>
               <div className="flex items-center justify-between mb-3">
                 <h2 className="font-display font-bold text-lg">Obras recientes</h2>
                 <Link href="/obras" className="text-xs text-accent font-mono hover:underline">ver todas →</Link>
@@ -139,9 +153,9 @@ export default function Dashboard() {
                 ))}
                 {jobs.length === 0 && <EmptyHint text="Todavía no cargaste ninguna obra." href="/obras/nueva" cta="+ crear la primera obra" />}
               </div>
-            </section>
+            </motion.section>
 
-            <section>
+            <motion.section variants={fadeUp}>
               <div className="flex items-center justify-between mb-3">
                 <h2 className="font-display font-bold text-lg">Preventivos próximos</h2>
                 <Link href="/mantenimiento" className="text-xs text-accent font-mono hover:underline">ver todo →</Link>
@@ -158,9 +172,9 @@ export default function Dashboard() {
                 ))}
                 {vencidas.length === 0 && proximas.length === 0 && <EmptyHint text="Nada vencido ni próximo." href="/mantenimiento" cta="programar un mantenimiento" />}
               </div>
-            </section>
+            </motion.section>
 
-            <section>
+            <motion.section variants={fadeUp}>
               <div className="flex items-center justify-between mb-3">
                 <h2 className="font-display font-bold text-lg">Equipos en mantenimiento</h2>
                 <Link href="/inventario" className="text-xs text-accent font-mono hover:underline">ver todo →</Link>
@@ -176,10 +190,15 @@ export default function Dashboard() {
                 ))}
                 {enMantenimiento === 0 && <EmptyHint text="Nada en mantenimiento por ahora." href="/inventario" cta="ver inventario" />}
               </div>
-            </section>
-          </div>
+            </motion.section>
+          </motion.div>
 
-          <section className="mt-8 bg-panel border border-line rounded-tag shadow-card p-5 max-w-2xl">
+          <motion.section
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.35, ease: "easeOut" as const, delay: 0.2 }}
+            className="mt-8 bg-panel border border-line rounded-tag shadow-card p-5 max-w-2xl"
+          >
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-display font-bold text-lg">Calendario de mantenimiento</h2>
               <Link href="/mantenimiento" className="text-xs text-accent font-mono hover:underline">ver todo →</Link>
@@ -208,7 +227,7 @@ export default function Dashboard() {
                 )}
               </div>
             </div>
-          </section>
+          </motion.section>
         </>
       )}
     </div>
@@ -231,13 +250,15 @@ function StatCard({
   emptyCta: string;
 }) {
   return (
-    <Link href={href} className="focus-ring block bg-panel border border-line rounded-tag shadow-card px-4 py-4 hover:shadow-sm transition-shadow">
-      <div className={`w-8 h-8 rounded-tag flex items-center justify-center mb-3 bg-${accent}/10`}>
-        <Icon className={`text-${accent}`} />
-      </div>
-      <p className={`font-display font-bold text-3xl text-${accent}`}>{value}</p>
-      <p className="text-xs text-steel mt-1">{value === 0 ? emptyCta : label}</p>
-    </Link>
+    <motion.div variants={fadeUp} whileHover={{ y: -3 }} transition={{ type: "spring", stiffness: 300, damping: 20 }}>
+      <Link href={href} className="focus-ring block bg-panel border border-line rounded-tag shadow-card px-4 py-4 hover:shadow-md transition-shadow">
+        <div className={`w-8 h-8 rounded-tag flex items-center justify-center mb-3 bg-${accent}/10`}>
+          <Icon className={`text-${accent}`} />
+        </div>
+        <p className={`font-display font-bold text-3xl text-${accent}`}><AnimatedNumber value={value} /></p>
+        <p className="text-xs text-steel mt-1">{value === 0 ? emptyCta : label}</p>
+      </Link>
+    </motion.div>
   );
 }
 
