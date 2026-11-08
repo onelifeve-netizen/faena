@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import Link from "next/link";
-import { Job, JobExpense, JobMachine, JobLogEntry, Machine, JobStatus, JobWorker, Contact, JobPayment, JobInvoice, JobBudgetItem, JobWip, WorkOrder } from "@/lib/types";
+import { Job, JobExpense, JobMachine, JobLogEntry, Machine, JobStatus, JobWorker, Contact, JobPayment, JobInvoice, JobBudgetItem, JobWip, WorkOrder, Location } from "@/lib/types";
 import StatusBadge from "@/components/StatusBadge";
 import ContactPicker from "@/components/ContactPicker";
 import { CURRENCIES, toReference, formatMoney } from "@/lib/currency";
@@ -29,6 +29,9 @@ function ObraDetalleInner() {
   const [job, setJob] = useState<Job | null>(null);
   const [expenses, setExpenses] = useState<JobExpense[]>([]);
   const [assigned, setAssigned] = useState<JobMachine[]>([]);
+  const [zones, setZones] = useState<Location[]>([]);
+  const [returningJobMachineId, setReturningJobMachineId] = useState<string | null>(null);
+  const [returnZoneId, setReturnZoneId] = useState("");
   const [availableMachines, setAvailableMachines] = useState<Machine[]>([]);
   const [log, setLog] = useState<JobLogEntry[]>([]);
   const [workers, setWorkers] = useState<JobWorker[]>([]);
@@ -80,7 +83,7 @@ function ObraDetalleInner() {
   const [noteError, setNoteError] = useState("");
 
   async function loadAll() {
-    const [jobRes, expRes, assignedRes, machRes, logRes, workersRes, payRes, invRes, itemsRes, ordersRes, wipRes, settingsRes, compRes] = await Promise.all([
+    const [jobRes, expRes, assignedRes, machRes, logRes, workersRes, payRes, invRes, itemsRes, ordersRes, wipRes, settingsRes, compRes, zonesRes] = await Promise.all([
       supabase.from("jobs").select("*").eq("id", id).single(),
       supabase.from("job_expenses").select("*").eq("job_id", id).order("created_at", { ascending: false }),
       supabase.from("job_machines").select("*, machine:machines(*)").eq("job_id", id).is("returned_at", null),
@@ -94,10 +97,12 @@ function ObraDetalleInner() {
       supabase.from("job_wip").select("*").eq("job_id", id).maybeSingle(),
       supabase.from("settings").select("*").eq("key", "reference_currency").single(),
       supabase.from("companies").select("id").maybeSingle(),
+      supabase.from("locations").select("*").order("name"),
     ]);
     setJob(jobRes.data);
     setExpenses(expRes.data ?? []);
     setAssigned((assignedRes.data as JobMachine[]) ?? []);
+    setZones((zonesRes.data as Location[]) ?? []);
     setAvailableMachines(machRes.data ?? []);
     setLog(logRes.data ?? []);
     setWorkers(workersRes.data ?? []);
@@ -304,16 +309,22 @@ function ObraDetalleInner() {
     loadAll();
   }
 
-  async function returnMachine(jobMachineId: string, machineId: string, machineName: string) {
+  async function returnMachine(jobMachineId: string, machineId: string, machineName: string, zoneId: string) {
     setMachineError("");
     const ok1 = await runMutation(
       () => supabase.from("job_machines").update({ returned_at: new Date().toISOString() }).eq("id", jobMachineId),
       setMachineError
     );
     if (!ok1) return;
-    const ok2 = await runMutation(() => supabase.from("machines").update({ status: "disponible" }).eq("id", machineId), setMachineError);
+    const ok2 = await runMutation(
+      () => supabase.from("machines").update({ status: "disponible", location_id: zoneId || null }).eq("id", machineId),
+      setMachineError
+    );
     if (!ok2) return;
-    await logAudit("machine", machineId, "devuelto de obra", `"${machineName}" devuelto de "${job?.name}"`);
+    const zoneName = zones.find((z) => z.id === zoneId)?.name;
+    await logAudit("machine", machineId, "devuelto de obra", `"${machineName}" devuelto de "${job?.name}"${zoneName ? ` → ${zoneName}` : ""}`);
+    setReturningJobMachineId(null);
+    setReturnZoneId("");
     loadAll();
   }
 
@@ -730,18 +741,44 @@ function ObraDetalleInner() {
         )}
         <div className="space-y-2">
           {assigned.map((am) => (
-            <div key={am.id} className="asset-tag status-en_obra px-4 py-3 flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium">{am.machine?.name}</p>
-                <p className="serial">{am.machine?.serial}</p>
+            <div key={am.id} className="asset-tag status-en_obra px-4 py-3">
+              <div className="flex items-center justify-between">
+                <Link href={`/inventario/detalle?id=${am.machine_id}`} className="focus-ring">
+                  <p className="text-sm font-medium hover:underline">{am.machine?.name}</p>
+                  <p className="serial">{am.machine?.serial}</p>
+                </Link>
+                {canWrite(role) && returningJobMachineId !== am.id && (
+                  <button
+                    onClick={() => setReturningJobMachineId(am.id)}
+                    className="focus-ring text-xs text-accent font-mono hover:underline shrink-0"
+                  >
+                    devolver al inventario
+                  </button>
+                )}
               </div>
-              {canWrite(role) && (
-                <button
-                  onClick={() => returnMachine(am.id, am.machine_id, am.machine?.name ?? "")}
-                  className="focus-ring text-xs text-accent font-mono hover:underline"
-                >
-                  devolver al inventario
-                </button>
+              {returningJobMachineId === am.id && (
+                <div className="mt-2 flex items-center gap-2 bg-base rounded-tag p-2">
+                  <select
+                    className="focus-ring flex-1 border border-line rounded-tag px-2 py-1 text-xs bg-white"
+                    value={returnZoneId}
+                    onChange={(e) => setReturnZoneId(e.target.value)}
+                  >
+                    <option value="">¿A qué zona vuelve?</option>
+                    {zones.map((z) => <option key={z.id} value={z.id}>{z.name}</option>)}
+                  </select>
+                  <button
+                    onClick={() => returnMachine(am.id, am.machine_id, am.machine?.name ?? "", returnZoneId)}
+                    className="focus-ring bg-ink text-white text-xs px-3 py-1 rounded-tag shrink-0"
+                  >
+                    confirmar
+                  </button>
+                  <button
+                    onClick={() => { setReturningJobMachineId(null); setReturnZoneId(""); }}
+                    className="focus-ring text-xs text-steel font-mono shrink-0"
+                  >
+                    cancelar
+                  </button>
+                </div>
               )}
             </div>
           ))}

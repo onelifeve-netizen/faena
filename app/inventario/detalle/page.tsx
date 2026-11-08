@@ -1,9 +1,10 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { Machine, WorkOrder, WorkOrderType, WorkOrderPriority, WorkOrderStatus, MaintenanceSchedule, MachineDepreciation, MachineSpec, MachinePhoto } from "@/lib/types";
+import { Machine, WorkOrder, WorkOrderType, WorkOrderPriority, WorkOrderStatus, MaintenanceSchedule, MachineDepreciation, MachineSpec, MachinePhoto, Location } from "@/lib/types";
 import { itemTypeLabel } from "@/lib/itemTypes";
 import StatusBadge from "@/components/StatusBadge";
 import DepreciationChart from "@/components/DepreciationChart";
@@ -61,18 +62,25 @@ function InventarioDetalleInner() {
   const [serialPhotoUrl, setSerialPhotoUrl] = useState<string | null>(null);
   const [uploadingSerialPhoto, setUploadingSerialPhoto] = useState(false);
   const [serialPhotoError, setSerialPhotoError] = useState("");
+  const [zones, setZones] = useState<Location[]>([]);
+  const [zoneError, setZoneError] = useState("");
+  const [currentJob, setCurrentJob] = useState<{ id: string; name: string } | null>(null);
 
   async function load() {
-    const [machRes, ordersRes, schedRes, depRes, specsRes, photosRes, compRes] = await Promise.all([
-      supabase.from("machines").select("*").eq("id", id).single(),
+    const [machRes, ordersRes, schedRes, depRes, specsRes, photosRes, compRes, zonesRes, jmRes] = await Promise.all([
+      supabase.from("machines").select("*, location_obj:locations(*)").eq("id", id).single(),
       supabase.from("work_orders").select("*").eq("machine_id", id).order("created_at", { ascending: false }),
       supabase.from("maintenance_schedules").select("*").eq("machine_id", id).order("next_due_at", { ascending: true }),
       supabase.from("machine_depreciation").select("*").eq("machine_id", id).maybeSingle(),
       supabase.from("machine_specs").select("*").eq("machine_id", id).order("created_at", { ascending: true }),
       supabase.from("machine_photos").select("*").eq("machine_id", id).order("created_at", { ascending: false }),
       supabase.from("companies").select("id").maybeSingle(),
+      supabase.from("locations").select("*").order("name"),
+      supabase.from("job_machines").select("job:jobs(id, name)").eq("machine_id", id).is("returned_at", null).maybeSingle(),
     ]);
     if (compRes.data) setCompanyId(compRes.data.id);
+    setZones((zonesRes.data as Location[]) ?? []);
+    setCurrentJob((jmRes.data as any)?.job ?? null);
     const photoList = (photosRes.data as MachinePhoto[]) ?? [];
     setPhotos(photoList);
     if (photoList.length > 0) {
@@ -170,6 +178,15 @@ function InventarioDetalleInner() {
     } finally {
       setUploadingSerialPhoto(false);
     }
+  }
+
+  async function changeZone(zoneId: string) {
+    setZoneError("");
+    const ok = await runMutation(() => supabase.from("machines").update({ location_id: zoneId || null }).eq("id", id), setZoneError);
+    if (!ok) return;
+    const zoneName = zones.find((z) => z.id === zoneId)?.name ?? "sin zona";
+    await logAudit("machine", id, "zona cambiada", `"${machine?.name}" → ${zoneName}`);
+    load();
   }
 
   async function removePhoto(photo: MachinePhoto) {
@@ -317,10 +334,31 @@ function InventarioDetalleInner() {
       <header className="mb-6 flex items-start justify-between">
         <div>
           <p className="font-mono text-xs text-steel uppercase tracking-wide">
-            {itemTypeLabel(machine.item_type)}{machine.category && ` · ${machine.category}`}{machine.location && ` · ${machine.location}`}
+            {itemTypeLabel(machine.item_type)}{machine.category && ` · ${machine.category}`}
           </p>
           <h1 className="font-display font-bold text-3xl text-ink">{machine.name}</h1>
-          <div className="flex items-center gap-2 mt-1 flex-wrap">
+
+          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+            {machine.status === "en_obra" && currentJob ? (
+              <Link href={`/obras/detalle?id=${currentJob.id}`} className="focus-ring badge bg-info/10 text-info hover:underline">
+                en obra: {currentJob.name} →
+              </Link>
+            ) : canWrite(role) ? (
+              <select
+                className="focus-ring text-xs border border-line rounded-tag px-2 py-1 bg-white"
+                value={machine.location_id ?? ""}
+                onChange={(e) => changeZone(e.target.value)}
+              >
+                <option value="">Sin zona asignada</option>
+                {zones.map((z) => <option key={z.id} value={z.id}>{z.name}</option>)}
+              </select>
+            ) : (
+              <span className="text-xs text-steel">{machine.location_obj?.name ?? "sin zona asignada"}</span>
+            )}
+          </div>
+          {zoneError && <p className="text-[11px] text-warn mt-0.5">{zoneError}</p>}
+
+          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
             <p className="serial">{machine.serial || "sin N.° de serie"}</p>
             {serialPhotoUrl && (
               <a href={serialPhotoUrl} target="_blank" rel="noreferrer" className="focus-ring text-xs text-accent font-mono hover:underline">

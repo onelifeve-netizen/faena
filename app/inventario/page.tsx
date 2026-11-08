@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-import { Machine, MachineStatus } from "@/lib/types";
+import { Machine, MachineStatus, Location } from "@/lib/types";
 import { DEFAULT_ITEM_TYPES, itemTypeLabel } from "@/lib/itemTypes";
 import ItemTypeGlossary from "@/components/ItemTypeGlossary";
 import StatusBadge from "@/components/StatusBadge";
@@ -34,7 +34,14 @@ export default function Inventario() {
   const [itemType, setItemType] = useState("equipo");
   const [addingNewType, setAddingNewType] = useState(false);
   const [newTypeName, setNewTypeName] = useState("");
-  const [location, setLocation] = useState("");
+  const [zones, setZones] = useState<Location[]>([]);
+  const [locationId, setLocationId] = useState("");
+  const [addingNewZone, setAddingNewZone] = useState(false);
+  const [newZoneName, setNewZoneName] = useState("");
+  const [manageZones, setManageZones] = useState(false);
+  const [zoneRenames, setZoneRenames] = useState<Record<string, string>>({});
+  const [zoneError, setZoneError] = useState("");
+  const [jobByMachine, setJobByMachine] = useState<Record<string, { id: string; name: string }>>({});
   const [serial, setSerial] = useState("");
   const [locationFilter, setLocationFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
@@ -51,9 +58,19 @@ export default function Inventario() {
   const [listError, setListError] = useState("");
 
   async function load() {
-    const { data, error } = await supabase.from("machines").select("*").order("created_at", { ascending: false });
-    if (error) setListError("No se pudo cargar el inventario. Revisá tu conexión y recargá la página.");
-    setMachines(data ?? []);
+    const [machRes, zonesRes, jmRes] = await Promise.all([
+      supabase.from("machines").select("*, location_obj:locations(*)").order("created_at", { ascending: false }),
+      supabase.from("locations").select("*").order("name"),
+      supabase.from("job_machines").select("machine_id, job:jobs(id, name)").is("returned_at", null),
+    ]);
+    if (machRes.error) setListError("No se pudo cargar el inventario. Revisá tu conexión y recargá la página.");
+    setMachines((machRes.data as unknown as Machine[]) ?? []);
+    setZones((zonesRes.data as Location[]) ?? []);
+    const jobMap: Record<string, { id: string; name: string }> = {};
+    (jmRes.data ?? []).forEach((r: any) => {
+      if (r.job) jobMap[r.machine_id] = r.job;
+    });
+    setJobByMachine(jobMap);
     setLoading(false);
   }
 
@@ -67,6 +84,35 @@ export default function Inventario() {
     });
   }, []);
 
+  async function addZone(name: string): Promise<string | null> {
+    const { data, error } = await supabase.from("locations").insert({ name }).select().single();
+    if (error || !data) {
+      setZoneError("No se pudo crear la zona.");
+      return null;
+    }
+    await logAudit("location", data.id, "zona creada", name);
+    setZones((z) => [...z, data as Location].sort((a, b) => a.name.localeCompare(b.name)));
+    return data.id;
+  }
+
+  async function renameZone(zone: Location) {
+    const newName = (zoneRenames[zone.id] ?? zone.name).trim();
+    if (!newName || newName === zone.name) return;
+    setZoneError("");
+    const ok = await runMutation(() => supabase.from("locations").update({ name: newName }).eq("id", zone.id), setZoneError);
+    if (!ok) return;
+    await logAudit("location", zone.id, "zona renombrada", `"${zone.name}" → "${newName}"`);
+    load();
+  }
+
+  async function deleteZone(zone: Location) {
+    setZoneError("");
+    const ok = await runMutation(() => supabase.from("locations").delete().eq("id", zone.id), setZoneError);
+    if (!ok) return;
+    await logAudit("location", zone.id, "zona eliminada", zone.name);
+    load();
+  }
+
   async function addMachine(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
@@ -79,7 +125,7 @@ export default function Inventario() {
             name,
             category,
             item_type: itemType,
-            location,
+            location_id: locationId || null,
             serial,
             status: "disponible",
             purchase_price: purchasePrice ? Number(purchasePrice) : null,
@@ -106,7 +152,7 @@ export default function Inventario() {
     setName("");
     setCategory("");
     setItemType("equipo");
-    setLocation("");
+    setLocationId("");
     setSerial("");
     setSerialPhoto(null);
     setPurchasePrice("");
@@ -118,11 +164,10 @@ export default function Inventario() {
     load();
   }
 
-  const locations = Array.from(new Set(machines.map((m) => m.location?.trim()).filter((l): l is string => !!l))).sort();
   const categories = Array.from(new Set(machines.map((m) => m.category?.trim()).filter((c): c is string => !!c))).sort();
   const types = Array.from(new Set([...DEFAULT_ITEM_TYPES, ...machines.map((m) => m.item_type?.trim()).filter((t): t is string => !!t)]));
   const filteredMachines = machines
-    .filter((m) => !locationFilter || m.location === locationFilter)
+    .filter((m) => !locationFilter || m.location_id === locationFilter)
     .filter((m) => !categoryFilter || m.category === categoryFilter)
     .filter((m) => !typeFilter || m.item_type === typeFilter)
     .sort((a, b) => (a.category || "zzz").localeCompare(b.category || "zzz") || a.name.localeCompare(b.name));
@@ -194,7 +239,46 @@ export default function Inventario() {
             )}
           </label>
           <Field label="Categoría" value={category} onChange={setCategory} placeholder="La que uses en tu rubro: Maquinaria, Repuesto, Insumo..." />
-          <Field label="Ubicación" value={location} onChange={setLocation} placeholder="Patio, almacén, nave..." />
+          <label className="text-xs text-steel">
+            Zona / ubicación
+            {addingNewZone ? (
+              <div className="mt-1 flex gap-1">
+                <input
+                  className="focus-ring flex-1 border border-line rounded-tag px-3 py-2 text-sm"
+                  placeholder="Nombre de la zona nueva"
+                  value={newZoneName}
+                  onChange={(e) => setNewZoneName(e.target.value)}
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!newZoneName.trim()) return;
+                    const newId = await addZone(newZoneName.trim());
+                    if (newId) setLocationId(newId);
+                    setAddingNewZone(false);
+                    setNewZoneName("");
+                  }}
+                  className="focus-ring text-xs bg-ink text-white px-2 rounded-tag shrink-0"
+                >
+                  ok
+                </button>
+              </div>
+            ) : (
+              <select
+                className="focus-ring mt-1 w-full border border-line rounded-tag px-3 py-2 text-sm bg-white"
+                value={locationId}
+                onChange={(e) => {
+                  if (e.target.value === "__nuevo__") setAddingNewZone(true);
+                  else setLocationId(e.target.value);
+                }}
+              >
+                <option value="">Sin asignar</option>
+                {zones.map((z) => <option key={z.id} value={z.id}>{z.name}</option>)}
+                <option value="__nuevo__">+ agregar zona nueva...</option>
+              </select>
+            )}
+          </label>
           <div>
             <Field label="N.° de serie o código" value={serial} onChange={setSerial} placeholder="Opcional — o adjuntá una foto abajo" />
             <label className="focus-ring inline-block mt-1 text-[11px] text-accent font-mono hover:underline cursor-pointer">
@@ -288,23 +372,73 @@ export default function Inventario() {
                   </select>
                 </label>
               )}
-              {locations.length > 0 && (
+              {zones.length > 0 && (
                 <label className="text-xs text-steel">
-                  Ubicación
+                  Zona
                   <select
                     className="focus-ring mt-1 block border border-line rounded-tag px-3 py-1.5 text-sm bg-white"
                     value={locationFilter}
                     onChange={(e) => setLocationFilter(e.target.value)}
                   >
                     <option value="">Todas</option>
-                    {locations.map((loc) => (
-                      <option key={loc} value={loc}>{loc}</option>
+                    {zones.map((z) => (
+                      <option key={z.id} value={z.id}>{z.name}</option>
                     ))}
                   </select>
                 </label>
               )}
+              {canWrite(role) && (
+                <button
+                  type="button"
+                  onClick={() => setManageZones((m) => !m)}
+                  className="focus-ring text-xs text-accent font-mono hover:underline self-end mb-1.5"
+                >
+                  {manageZones ? "cerrar gestión de zonas" : "gestionar zonas"}
+                </button>
+              )}
             </div>
           </div>
+
+          {manageZones && canWrite(role) && (
+            <div className="bg-panel border border-line rounded-tag shadow-card p-4 mb-6">
+              <p className="text-xs text-steel uppercase tracking-wide font-mono mb-2">Zonas / módulos</p>
+              <FormError message={zoneError} />
+              <div className="space-y-1.5 mb-3">
+                {zones.map((z) => (
+                  <div key={z.id} className="flex items-center gap-2">
+                    <input
+                      className="focus-ring flex-1 border border-line rounded-tag px-2 py-1 text-sm"
+                      value={zoneRenames[z.id] ?? z.name}
+                      onChange={(e) => setZoneRenames((r) => ({ ...r, [z.id]: e.target.value }))}
+                      onBlur={() => renameZone(z)}
+                    />
+                    <button onClick={() => deleteZone(z)} className="focus-ring text-xs text-warn font-mono hover:underline shrink-0">
+                      borrar
+                    </button>
+                  </div>
+                ))}
+                {zones.length === 0 && <p className="text-xs text-steel">Todavía no hay zonas creadas.</p>}
+              </div>
+              <div className="flex gap-1">
+                <input
+                  className="focus-ring flex-1 border border-line rounded-tag px-2 py-1.5 text-sm"
+                  placeholder="Nueva zona (ej: Almacén A, Patio sector norte...)"
+                  value={newZoneName}
+                  onChange={(e) => setNewZoneName(e.target.value)}
+                />
+                <button
+                  onClick={async () => {
+                    if (!newZoneName.trim()) return;
+                    await addZone(newZoneName.trim());
+                    setNewZoneName("");
+                  }}
+                  className="focus-ring text-xs bg-ink text-white px-3 rounded-tag shrink-0"
+                >
+                  + agregar
+                </button>
+              </div>
+            </div>
+          )}
         </>
       )}
 
@@ -335,11 +469,16 @@ export default function Inventario() {
                         <span className="badge bg-steel/10 text-steel">{itemTypeLabel(m.item_type)}</span>
                       </div>
                       <p className="text-xs text-steel mt-0.5">
-                        {m.location ? <span>{m.location} · </span> : <span className="text-steel/50">sin ubicación · </span>}
+                        {m.location_obj?.name ? <span>{m.location_obj.name} · </span> : <span className="text-steel/50">sin zona · </span>}
                         <span className="serial">{m.serial || "sin N.° de serie"}</span>
                       </p>
                     </Link>
                     <div className="flex items-center gap-3">
+                      {m.status === "en_obra" && jobByMachine[m.id] && (
+                        <Link href={`/obras/detalle?id=${jobByMachine[m.id].id}`} className="focus-ring text-[11px] text-accent font-mono hover:underline">
+                          en obra: {jobByMachine[m.id].name} →
+                        </Link>
+                      )}
                       <StatusBadge status={m.status} />
                       {canWrite(role) && (
                         <select

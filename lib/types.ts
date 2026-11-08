@@ -12,6 +12,13 @@ export interface Company {
   created_at: string;
 }
 
+export interface Location {
+  id: string;
+  company_id: string;
+  name: string;
+  created_at: string;
+}
+
 export interface Machine {
   id: string;
   company_id: string;
@@ -19,6 +26,8 @@ export interface Machine {
   category: string | null;
   item_type: ItemType;
   location: string | null;
+  location_id: string | null;
+  location_obj?: Location | null;
   serial: string | null;
   serial_photo_url: string | null;
   status: MachineStatus;
