@@ -70,6 +70,9 @@ function ObraDetalleInner() {
   const [itemCurrency, setItemCurrency] = useState("ARS");
   const [itemFx, setItemFx] = useState("1");
   const [itemError, setItemError] = useState("");
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editQty, setEditQty] = useState("1");
+  const [editPrice, setEditPrice] = useState("");
 
   const [expenseDesc, setExpenseDesc] = useState("");
   const [expenseAmount, setExpenseAmount] = useState("");
@@ -300,6 +303,25 @@ function ObraDetalleInner() {
     const ok = await runMutation(() => supabase.from("job_budget_items").delete().eq("id", itemId), setItemError);
     if (!ok) return;
     await logAudit("job_budget_item", id, "ítem de presupuesto quitado", desc);
+    loadAll();
+  }
+
+  function startEditBudgetItem(it: JobBudgetItem) {
+    setEditingItemId(it.id);
+    setEditQty(String(it.quantity));
+    setEditPrice(String(it.unit_price));
+    setItemError("");
+  }
+
+  async function saveEditBudgetItem(itemId: string, desc: string) {
+    if (!editQty || !editPrice) return;
+    const ok = await runMutation(
+      () => supabase.from("job_budget_items").update({ quantity: Number(editQty), unit_price: Number(editPrice) }).eq("id", itemId),
+      setItemError
+    );
+    if (!ok) return;
+    await logAudit("job_budget_item", id, "ítem de presupuesto editado", `${desc} → x${editQty} @ ${editPrice}`);
+    setEditingItemId(null);
     loadAll();
   }
 
@@ -677,16 +699,47 @@ function ObraDetalleInner() {
         ) : (
           <ul className="space-y-1 text-xs text-steel">
             {budgetItems.map((it) => (
-              <li key={it.id} className="flex justify-between items-center border-b border-line pb-1">
-                <span>{it.description} <span className="font-mono">x{it.quantity}</span></span>
-                <span className="flex items-center gap-2">
-                  <span className="serial">{formatMoney(it.quantity * it.unit_price, it.currency)}</span>
-                  {canWrite(role) && (
-                    <button onClick={() => removeBudgetItem(it.id, it.description)} className="focus-ring text-warn hover:underline">
-                      quitar
+              <li key={it.id} className="flex justify-between items-center border-b border-line pb-1 gap-2">
+                {editingItemId === it.id ? (
+                  <>
+                    <span className="flex-1">{it.description}</span>
+                    <input
+                      className="focus-ring w-16 border border-line rounded-tag px-2 py-0.5 text-xs"
+                      type="number"
+                      value={editQty}
+                      onChange={(e) => setEditQty(e.target.value)}
+                    />
+                    <input
+                      className="focus-ring w-24 border border-line rounded-tag px-2 py-0.5 text-xs"
+                      type="number"
+                      value={editPrice}
+                      onChange={(e) => setEditPrice(e.target.value)}
+                    />
+                    <button onClick={() => saveEditBudgetItem(it.id, it.description)} className="focus-ring text-accent hover:underline shrink-0">
+                      guardar
                     </button>
-                  )}
-                </span>
+                    <button onClick={() => setEditingItemId(null)} className="focus-ring text-steel hover:underline shrink-0">
+                      cancelar
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span>{it.description} <span className="font-mono">x{it.quantity}</span></span>
+                    <span className="flex items-center gap-2">
+                      <span className="serial">{formatMoney(it.quantity * it.unit_price, it.currency)}</span>
+                      {canWrite(role) && (
+                        <>
+                          <button onClick={() => startEditBudgetItem(it)} className="focus-ring text-accent hover:underline">
+                            editar
+                          </button>
+                          <button onClick={() => removeBudgetItem(it.id, it.description)} className="focus-ring text-warn hover:underline">
+                            quitar
+                          </button>
+                        </>
+                      )}
+                    </span>
+                  </>
+                )}
               </li>
             ))}
           </ul>
