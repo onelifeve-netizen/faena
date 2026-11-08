@@ -58,6 +58,9 @@ function InventarioDetalleInner() {
   const [companyId, setCompanyId] = useState("");
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [photoError, setPhotoError] = useState("");
+  const [serialPhotoUrl, setSerialPhotoUrl] = useState<string | null>(null);
+  const [uploadingSerialPhoto, setUploadingSerialPhoto] = useState(false);
+  const [serialPhotoError, setSerialPhotoError] = useState("");
 
   async function load() {
     const [machRes, ordersRes, schedRes, depRes, specsRes, photosRes, compRes] = await Promise.all([
@@ -85,6 +88,12 @@ function InventarioDetalleInner() {
       setPhotoUrls({});
     }
     setMachine(machRes.data);
+    if (machRes.data?.serial_photo_url) {
+      const { data: signed } = await supabase.storage.from("inventario-fotos").createSignedUrl(machRes.data.serial_photo_url, 3600);
+      setSerialPhotoUrl(signed?.signedUrl ?? null);
+    } else {
+      setSerialPhotoUrl(null);
+    }
     setOrders(ordersRes.data ?? []);
     setSchedules(schedRes.data ?? []);
     setDepreciation((depRes.data as MachineDepreciation) ?? null);
@@ -138,6 +147,28 @@ function InventarioDetalleInner() {
       load();
     } finally {
       setUploadingPhoto(false);
+    }
+  }
+
+  async function uploadSerialPhoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !companyId) return;
+    setSerialPhotoError("");
+    setUploadingSerialPhoto(true);
+    try {
+      const ext = file.name.split(".").pop() || "jpg";
+      const path = `${companyId}/${id}/serial-${Date.now()}.${ext}`;
+      const { error: uploadError } = await supabase.storage.from("inventario-fotos").upload(path, file);
+      if (uploadError) {
+        setSerialPhotoError("No se pudo subir la foto.");
+        return;
+      }
+      const ok = await runMutation(() => supabase.from("machines").update({ serial_photo_url: path }).eq("id", id), setSerialPhotoError);
+      if (!ok) return;
+      load();
+    } finally {
+      setUploadingSerialPhoto(false);
     }
   }
 
@@ -289,7 +320,21 @@ function InventarioDetalleInner() {
             {itemTypeLabel(machine.item_type)}{machine.category && ` · ${machine.category}`}{machine.location && ` · ${machine.location}`}
           </p>
           <h1 className="font-display font-bold text-3xl text-ink">{machine.name}</h1>
-          <p className="serial mt-1">{machine.serial || "sin N.° de serie"}</p>
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
+            <p className="serial">{machine.serial || "sin N.° de serie"}</p>
+            {serialPhotoUrl && (
+              <a href={serialPhotoUrl} target="_blank" rel="noreferrer" className="focus-ring text-xs text-accent font-mono hover:underline">
+                📷 ver foto del serial
+              </a>
+            )}
+            {canWrite(role) && (
+              <label className="focus-ring text-xs text-accent font-mono hover:underline cursor-pointer">
+                {uploadingSerialPhoto ? "subiendo..." : serialPhotoUrl ? "reemplazar foto" : "+ adjuntar foto del serial"}
+                <input type="file" accept="image/*" className="hidden" onChange={uploadSerialPhoto} disabled={uploadingSerialPhoto} />
+              </label>
+            )}
+          </div>
+          {serialPhotoError && <p className="text-[11px] text-warn mt-0.5">{serialPhotoError}</p>}
         </div>
         <StatusBadge status={machine.status} />
       </header>

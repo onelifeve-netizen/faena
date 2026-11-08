@@ -45,6 +45,8 @@ export default function Inventario() {
   const [purchaseDate, setPurchaseDate] = useState("");
   const [usefulLife, setUsefulLife] = useState("");
   const [refCurrency, setRefCurrency] = useState("USD");
+  const [companyId, setCompanyId] = useState("");
+  const [serialPhoto, setSerialPhoto] = useState<File | null>(null);
   const [formError, setFormError] = useState("");
   const [listError, setListError] = useState("");
 
@@ -59,6 +61,9 @@ export default function Inventario() {
     load();
     supabase.from("settings").select("*").eq("key", "reference_currency").single().then(({ data }) => {
       if (data) setRefCurrency(data.value);
+    });
+    supabase.from("companies").select("id").maybeSingle().then(({ data }) => {
+      if (data) setCompanyId(data.id);
     });
   }, []);
 
@@ -92,11 +97,18 @@ export default function Inventario() {
     );
     if (!ok) return;
     if (newId) await logAudit("machine", newId, "creado", `Se agregó "${name}" al inventario`);
+    if (newId && serialPhoto && companyId) {
+      const ext = serialPhoto.name.split(".").pop() || "jpg";
+      const path = `${companyId}/${newId}/serial-${Date.now()}.${ext}`;
+      const { error: uploadError } = await supabase.storage.from("inventario-fotos").upload(path, serialPhoto);
+      if (!uploadError) await supabase.from("machines").update({ serial_photo_url: path }).eq("id", newId);
+    }
     setName("");
     setCategory("");
     setItemType("equipo");
     setLocation("");
     setSerial("");
+    setSerialPhoto(null);
     setPurchasePrice("");
     setPurchaseCurrency("ARS");
     setPurchaseFx("1");
@@ -183,7 +195,13 @@ export default function Inventario() {
           </label>
           <Field label="Categoría" value={category} onChange={setCategory} placeholder="La que uses en tu rubro: Maquinaria, Repuesto, Insumo..." />
           <Field label="Ubicación" value={location} onChange={setLocation} placeholder="Patio, almacén, nave..." />
-          <Field label="N.° de serie o código" value={serial} onChange={setSerial} placeholder="Opcional" />
+          <div>
+            <Field label="N.° de serie o código" value={serial} onChange={setSerial} placeholder="Opcional — o adjuntá una foto abajo" />
+            <label className="focus-ring inline-block mt-1 text-[11px] text-accent font-mono hover:underline cursor-pointer">
+              📷 {serialPhoto ? "foto lista para subir" : "adjuntar foto del serial (si es ilegible)"}
+              <input type="file" accept="image/*" className="hidden" onChange={(e) => setSerialPhoto(e.target.files?.[0] ?? null)} />
+            </label>
+          </div>
           <div className="col-span-1 sm:col-span-3 pt-3 border-t border-line">
             <p className="text-[11px] text-steel uppercase tracking-wide font-mono mb-2">Compra (opcional — habilita el cálculo de depreciación)</p>
           </div>

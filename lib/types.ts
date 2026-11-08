@@ -20,6 +20,7 @@ export interface Machine {
   item_type: ItemType;
   location: string | null;
   serial: string | null;
+  serial_photo_url: string | null;
   status: MachineStatus;
   notes: string | null;
   created_at: string;
