@@ -441,6 +441,11 @@ function ObraDetalleInner() {
   const invoicedRef = invoices.reduce((sum, inv) => sum + toReference(Number(inv.amount), Number(inv.fx_rate)), 0);
   const pendingRef = budgetRef - paidRef;
   const budgetItemsTotalRef = budgetItems.reduce((sum, it) => sum + toReference(it.quantity * it.unit_price, it.fx_rate), 0);
+  const assignedValueRef = assigned.reduce((sum, am) => {
+    const m = am.machine;
+    if (!m?.purchase_price) return sum;
+    return sum + toReference(Number(m.purchase_price), Number(m.purchase_price_fx_rate));
+  }, 0);
   const pctCost = budgetRef > 0 ? Math.min(100, Math.round((spentRef / budgetRef) * 100)) : 0;
   const pctPaid = budgetRef > 0 ? Math.min(100, Math.round((paidRef / budgetRef) * 100)) : 0;
 
@@ -848,7 +853,12 @@ function ObraDetalleInner() {
 
       {/* Maquinaria asignada */}
       <section className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6">
-        <h2 className="font-display font-bold text-sm mb-3">Maquinaria en esta obra</h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-display font-bold text-sm">Maquinaria en esta obra</h2>
+          {assignedValueRef > 0 && (
+            <span className="serial">valor en obra: {formatMoney(assignedValueRef, refCurrency)}</span>
+          )}
+        </div>
         {canWrite(role) && (
           <>
             <form onSubmit={assignMachine} className="flex gap-2 mb-4">
