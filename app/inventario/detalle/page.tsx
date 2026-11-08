@@ -4,8 +4,8 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { Machine, WorkOrder, WorkOrderType, WorkOrderPriority, WorkOrderStatus, MaintenanceSchedule, MachineDepreciation, MachineSpec, MachinePhoto, Location, TransferNote } from "@/lib/types";
-import { itemTypeLabel } from "@/lib/itemTypes";
+import { Machine, WorkOrder, WorkOrderType, WorkOrderPriority, WorkOrderStatus, MaintenanceSchedule, MachineDepreciation, MachineSpec, MachinePhoto, Location, TransferNote, ToolConditionLog, ToolCondition } from "@/lib/types";
+import { itemTypeLabel, CONDITION_LABELS, CONDITION_STYLES } from "@/lib/itemTypes";
 import StatusBadge from "@/components/StatusBadge";
 import DepreciationChart from "@/components/DepreciationChart";
 import MachineTimeline from "@/components/MachineTimeline";
@@ -76,9 +76,13 @@ function InventarioDetalleInner() {
   const [transferNote, setTransferNote] = useState("");
   const [transferError, setTransferError] = useState("");
   const [lastTransferLink, setLastTransferLink] = useState<string | null>(null);
+  const [conditionLogs, setConditionLogs] = useState<ToolConditionLog[]>([]);
+  const [newCondition, setNewCondition] = useState<ToolCondition>("bueno");
+  const [conditionNote, setConditionNote] = useState("");
+  const [conditionError, setConditionError] = useState("");
 
   async function load() {
-    const [machRes, ordersRes, schedRes, depRes, specsRes, photosRes, compRes, zonesRes, jmRes, accRes, unlinkedRes, tnRes] = await Promise.all([
+    const [machRes, ordersRes, schedRes, depRes, specsRes, photosRes, compRes, zonesRes, jmRes, accRes, unlinkedRes, tnRes, condRes] = await Promise.all([
       supabase.from("machines").select("*, location_obj:locations(*)").eq("id", id).single(),
       supabase.from("work_orders").select("*").eq("machine_id", id).order("created_at", { ascending: false }),
       supabase.from("maintenance_schedules").select("*").eq("machine_id", id).order("next_due_at", { ascending: true }),
@@ -91,6 +95,7 @@ function InventarioDetalleInner() {
       supabase.from("machines").select("*").eq("parent_machine_id", id).order("name"),
       supabase.from("machines").select("*").is("parent_machine_id", null).neq("id", id).order("name"),
       supabase.from("transfer_notes").select("*").eq("machine_id", id).order("created_at", { ascending: false }),
+      supabase.from("tool_condition_logs").select("*").eq("machine_id", id).order("created_at", { ascending: false }),
     ]);
     if (compRes.data) setCompanyId(compRes.data.id);
     setZones((zonesRes.data as Location[]) ?? []);
@@ -98,6 +103,7 @@ function InventarioDetalleInner() {
     setAccessories((accRes.data as Machine[]) ?? []);
     setUnlinkedMachines((unlinkedRes.data as Machine[]) ?? []);
     setTransferNotes((tnRes.data as TransferNote[]) ?? []);
+    setConditionLogs((condRes.data as ToolConditionLog[]) ?? []);
     const photoList = (photosRes.data as MachinePhoto[]) ?? [];
     setPhotos(photoList);
     if (photoList.length > 0) {
@@ -273,6 +279,26 @@ function InventarioDetalleInner() {
     setTransferDestination("");
     setTransferNote("");
     setShowTransferForm(false);
+    load();
+  }
+
+  async function logCondition(e: React.FormEvent) {
+    e.preventDefault();
+    setConditionError("");
+    const { data: userData } = await supabase.auth.getUser();
+    const ok = await runMutation(
+      () =>
+        supabase.from("tool_condition_logs").insert({
+          machine_id: id,
+          condition: newCondition,
+          note: conditionNote || null,
+          logged_by_email: userData?.user?.email ?? null,
+        }),
+      setConditionError
+    );
+    if (!ok) return;
+    await logAudit("machine", id, "estado registrado", `"${machine?.name}" → ${CONDITION_LABELS[newCondition]}`);
+    setConditionNote("");
     load();
   }
 
@@ -752,6 +778,57 @@ function InventarioDetalleInner() {
           </>
         )}
         <FormError message={accessoryError} />
+      </section>
+
+      {/* Estado y desgaste */}
+      <section className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6">
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="font-display font-bold text-sm">Estado y desgaste</h2>
+          {conditionLogs[0] && (
+            <span className={`badge ${CONDITION_STYLES[conditionLogs[0].condition]}`}>{CONDITION_LABELS[conditionLogs[0].condition]}</span>
+          )}
+        </div>
+        <p className="text-xs text-steel mb-3">
+          Lo registra quien usa el equipo, para saber si hace falta reponerlo sin esperar a que se rompa del todo.
+        </p>
+        {canWrite(role) && (
+          <form onSubmit={logCondition} className="flex flex-col sm:flex-row gap-2 mb-3">
+            <select
+              className="focus-ring border border-line rounded-tag px-3 py-1.5 text-sm bg-white"
+              value={newCondition}
+              onChange={(e) => setNewCondition(e.target.value as ToolCondition)}
+            >
+              <option value="bueno">Bueno</option>
+              <option value="regular">Regular</option>
+              <option value="malo">Malo</option>
+              <option value="reponer">Necesita reposición</option>
+            </select>
+            <input
+              className="focus-ring flex-1 border border-line rounded-tag px-3 py-1.5 text-sm"
+              placeholder="Nota (opcional, ej: corta mal, cable pelado...)"
+              value={conditionNote}
+              onChange={(e) => setConditionNote(e.target.value)}
+            />
+            <button className="focus-ring bg-ink text-white text-sm px-4 py-1.5 rounded-tag shrink-0">Registrar</button>
+          </form>
+        )}
+        <FormError message={conditionError} />
+        {conditionLogs.length === 0 ? (
+          <p className="text-sm text-steel">Sin registros de estado todavía.</p>
+        ) : (
+          <div className="space-y-1.5">
+            {conditionLogs.slice(0, 8).map((c) => (
+              <div key={c.id} className="flex items-center justify-between text-xs border-b border-line pb-1.5">
+                <span className="text-steel">
+                  <span className={`badge ${CONDITION_STYLES[c.condition]} mr-1.5`}>{CONDITION_LABELS[c.condition]}</span>
+                  {c.note && <span>{c.note} — </span>}
+                  {new Date(c.created_at).toLocaleDateString("es-AR")}
+                </span>
+                {c.logged_by_email && <span className="text-steel/70 font-mono shrink-0">{c.logged_by_email}</span>}
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* Línea de tiempo del equipo */}

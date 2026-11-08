@@ -41,6 +41,18 @@ export interface Machine {
   useful_life_years: number | null;
 }
 
+export type ToolCondition = "bueno" | "regular" | "malo" | "reponer";
+
+export interface ToolConditionLog {
+  id: string;
+  company_id: string;
+  machine_id: string;
+  condition: ToolCondition;
+  note: string | null;
+  logged_by_email: string | null;
+  created_at: string;
+}
+
 export interface TransferNote {
   id: string;
   company_id: string;

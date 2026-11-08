@@ -16,6 +16,20 @@ export function itemTypeLabel(t: string): string {
   return ITEM_TYPE_LABELS[t] ?? (t.charAt(0).toUpperCase() + t.slice(1));
 }
 
+export const CONDITION_LABELS: Record<string, string> = {
+  bueno: "Bueno",
+  regular: "Regular",
+  malo: "Malo",
+  reponer: "Necesita reposición",
+};
+
+export const CONDITION_STYLES: Record<string, string> = {
+  bueno: "bg-ok/10 text-ok",
+  regular: "bg-info/10 text-info",
+  malo: "bg-warn/10 text-warn",
+  reponer: "bg-warn/20 text-warn",
+};
+
 export const ITEM_TYPE_GLOSSARY: Record<string, string> = {
   equipo: "Máquina o unidad principal, se identifica sola (ej: retroexcavadora, generador).",
   accesorio: "Va siempre junto a un equipo, no se usa solo (ej: balde, pala, acople).",

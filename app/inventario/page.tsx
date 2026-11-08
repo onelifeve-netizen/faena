@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-import { Machine, MachineStatus, Location } from "@/lib/types";
-import { DEFAULT_ITEM_TYPES, itemTypeLabel } from "@/lib/itemTypes";
+import { Machine, MachineStatus, Location, ToolCondition } from "@/lib/types";
+import { DEFAULT_ITEM_TYPES, itemTypeLabel, CONDITION_LABELS, CONDITION_STYLES } from "@/lib/itemTypes";
 import ItemTypeGlossary from "@/components/ItemTypeGlossary";
 import StatusBadge from "@/components/StatusBadge";
 import FormError from "@/components/FormError";
@@ -42,6 +42,7 @@ export default function Inventario() {
   const [zoneRenames, setZoneRenames] = useState<Record<string, string>>({});
   const [zoneError, setZoneError] = useState("");
   const [jobByMachine, setJobByMachine] = useState<Record<string, { id: string; name: string }>>({});
+  const [conditionByMachine, setConditionByMachine] = useState<Record<string, ToolCondition>>({});
   const [serial, setSerial] = useState("");
   const [locationFilter, setLocationFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
@@ -58,10 +59,11 @@ export default function Inventario() {
   const [listError, setListError] = useState("");
 
   async function load() {
-    const [machRes, zonesRes, jmRes] = await Promise.all([
+    const [machRes, zonesRes, jmRes, condRes] = await Promise.all([
       supabase.from("machines").select("*, location_obj:locations(*)").order("created_at", { ascending: false }),
       supabase.from("locations").select("*").order("name"),
       supabase.from("job_machines").select("machine_id, job:jobs(id, name)").is("returned_at", null),
+      supabase.from("tool_condition_logs").select("machine_id, condition, created_at").order("created_at", { ascending: false }),
     ]);
     if (machRes.error) setListError("No se pudo cargar el inventario. Revisá tu conexión y recargá la página.");
     setMachines((machRes.data as unknown as Machine[]) ?? []);
@@ -71,6 +73,11 @@ export default function Inventario() {
       if (r.job) jobMap[r.machine_id] = r.job;
     });
     setJobByMachine(jobMap);
+    const condMap: Record<string, ToolCondition> = {};
+    (condRes.data ?? []).forEach((r: any) => {
+      if (!condMap[r.machine_id]) condMap[r.machine_id] = r.condition;
+    });
+    setConditionByMachine(condMap);
     setLoading(false);
   }
 
@@ -334,6 +341,12 @@ export default function Inventario() {
             />
           </div>
 
+          {Object.values(conditionByMachine).filter((c) => c === "reponer").length > 0 && (
+            <div className="bg-warn/10 border border-warn/20 rounded-tag px-4 py-2.5 mb-4 text-xs text-warn">
+              ⚠ {Object.values(conditionByMachine).filter((c) => c === "reponer").length} herramienta(s) marcadas como "necesita reposición" — revisalas abajo.
+            </div>
+          )}
+
           <div className="bg-panel border border-line rounded-tag shadow-card p-4 mb-6 flex flex-wrap items-center gap-6">
             <DonutChart
               segments={Object.entries(
@@ -467,6 +480,9 @@ export default function Inventario() {
                       <div className="flex items-center gap-2">
                         <p className="font-semibold text-sm text-ink hover:underline">{m.name}</p>
                         <span className="badge bg-steel/10 text-steel">{itemTypeLabel(m.item_type)}</span>
+                        {conditionByMachine[m.id] && (
+                          <span className={`badge ${CONDITION_STYLES[conditionByMachine[m.id]]}`}>{CONDITION_LABELS[conditionByMachine[m.id]]}</span>
+                        )}
                       </div>
                       <p className="text-xs text-steel mt-0.5">
                         {m.location_obj?.name ? <span>{m.location_obj.name} · </span> : <span className="text-steel/50">sin zona · </span>}
