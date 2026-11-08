@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { Machine, WorkOrder, WorkOrderType, WorkOrderPriority, WorkOrderStatus, MaintenanceSchedule, MachineDepreciation, MachineSpec, MachinePhoto, Location } from "@/lib/types";
+import { Machine, WorkOrder, WorkOrderType, WorkOrderPriority, WorkOrderStatus, MaintenanceSchedule, MachineDepreciation, MachineSpec, MachinePhoto, Location, TransferNote } from "@/lib/types";
 import { itemTypeLabel } from "@/lib/itemTypes";
 import StatusBadge from "@/components/StatusBadge";
 import DepreciationChart from "@/components/DepreciationChart";
@@ -70,9 +70,15 @@ function InventarioDetalleInner() {
   const [linkAccessoryId, setLinkAccessoryId] = useState("");
   const [newAccessoryName, setNewAccessoryName] = useState("");
   const [accessoryError, setAccessoryError] = useState("");
+  const [transferNotes, setTransferNotes] = useState<TransferNote[]>([]);
+  const [showTransferForm, setShowTransferForm] = useState(false);
+  const [transferDestination, setTransferDestination] = useState("");
+  const [transferNote, setTransferNote] = useState("");
+  const [transferError, setTransferError] = useState("");
+  const [lastTransferLink, setLastTransferLink] = useState<string | null>(null);
 
   async function load() {
-    const [machRes, ordersRes, schedRes, depRes, specsRes, photosRes, compRes, zonesRes, jmRes, accRes, unlinkedRes] = await Promise.all([
+    const [machRes, ordersRes, schedRes, depRes, specsRes, photosRes, compRes, zonesRes, jmRes, accRes, unlinkedRes, tnRes] = await Promise.all([
       supabase.from("machines").select("*, location_obj:locations(*)").eq("id", id).single(),
       supabase.from("work_orders").select("*").eq("machine_id", id).order("created_at", { ascending: false }),
       supabase.from("maintenance_schedules").select("*").eq("machine_id", id).order("next_due_at", { ascending: true }),
@@ -84,12 +90,14 @@ function InventarioDetalleInner() {
       supabase.from("job_machines").select("job:jobs(id, name)").eq("machine_id", id).is("returned_at", null).maybeSingle(),
       supabase.from("machines").select("*").eq("parent_machine_id", id).order("name"),
       supabase.from("machines").select("*").is("parent_machine_id", null).neq("id", id).order("name"),
+      supabase.from("transfer_notes").select("*").eq("machine_id", id).order("created_at", { ascending: false }),
     ]);
     if (compRes.data) setCompanyId(compRes.data.id);
     setZones((zonesRes.data as Location[]) ?? []);
     setCurrentJob((jmRes.data as any)?.job ?? null);
     setAccessories((accRes.data as Machine[]) ?? []);
     setUnlinkedMachines((unlinkedRes.data as Machine[]) ?? []);
+    setTransferNotes((tnRes.data as TransferNote[]) ?? []);
     const photoList = (photosRes.data as MachinePhoto[]) ?? [];
     setPhotos(photoList);
     if (photoList.length > 0) {
@@ -235,6 +243,36 @@ function InventarioDetalleInner() {
     const ok = await runMutation(() => supabase.from("machines").update({ parent_machine_id: null }).eq("id", acc.id), setAccessoryError);
     if (!ok) return;
     await logAudit("machine", acc.id, "desvinculado de equipo", `"${acc.name}" ya no depende de "${machine?.name}"`);
+    load();
+  }
+
+  async function createTransferNote(e: React.FormEvent) {
+    e.preventDefault();
+    if (!transferDestination.trim()) return;
+    setTransferError("");
+    const fromLocation = currentJob ? `Obra: ${currentJob.name}` : machine?.location_obj?.name ?? null;
+    const { data: userData } = await supabase.auth.getUser();
+    const { data, error } = await supabase
+      .from("transfer_notes")
+      .insert({
+        machine_id: id,
+        from_location: fromLocation,
+        to_location: transferDestination.trim(),
+        note: transferNote || null,
+        created_by_email: userData?.user?.email ?? null,
+      })
+      .select()
+      .single();
+    if (error || !data) {
+      setTransferError("No se pudo generar la guía.");
+      return;
+    }
+    await logAudit("machine", id, "guía de traslado generada", `"${machine?.name}" → ${transferDestination.trim()}`);
+    const base = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+    setLastTransferLink(`${window.location.origin}${base}/guia?token=${data.share_token}`);
+    setTransferDestination("");
+    setTransferNote("");
+    setShowTransferForm(false);
     load();
   }
 
@@ -569,6 +607,87 @@ function InventarioDetalleInner() {
           </>
         )}
         <FormError message={specError} />
+      </section>
+
+      {/* Guía de traslado */}
+      <section className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6">
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="font-display font-bold text-sm">Guía de traslado</h2>
+          {canWrite(role) && !showTransferForm && (
+            <button onClick={() => setShowTransferForm(true)} className="focus-ring text-xs text-accent font-mono hover:underline">
+              + generar guía
+            </button>
+          )}
+        </div>
+        <p className="text-xs text-steel mb-3">
+          Comprobante de traslado con el nombre de tu empresa, para compartir con quien lo necesite
+          (transportista, cliente) sin que tenga que entrar al sistema.
+        </p>
+
+        {showTransferForm && canWrite(role) && (
+          <form onSubmit={createTransferNote} className="bg-base rounded-tag p-3 space-y-2 mb-3">
+            <input
+              className="focus-ring w-full border border-line rounded-tag px-3 py-1.5 text-sm"
+              placeholder="Destino (ej: Obra Ampliación Norte, Depósito del cliente...)"
+              value={transferDestination}
+              onChange={(e) => setTransferDestination(e.target.value)}
+              required
+              autoFocus
+            />
+            <input
+              className="focus-ring w-full border border-line rounded-tag px-3 py-1.5 text-sm"
+              placeholder="Observación (opcional)"
+              value={transferNote}
+              onChange={(e) => setTransferNote(e.target.value)}
+            />
+            <div className="flex gap-2">
+              <button className="focus-ring bg-ink text-white text-xs px-3 py-1.5 rounded-tag">Generar guía</button>
+              <button type="button" onClick={() => setShowTransferForm(false)} className="focus-ring text-xs text-steel font-mono">
+                cancelar
+              </button>
+            </div>
+          </form>
+        )}
+        <FormError message={transferError} />
+
+        {lastTransferLink && (
+          <div className="bg-ok/10 text-ok text-xs rounded-tag px-3 py-2 mb-3 flex items-center justify-between gap-2">
+            <span className="truncate">{lastTransferLink}</span>
+            <div className="flex gap-2 shrink-0">
+              <button
+                onClick={() => navigator.clipboard.writeText(lastTransferLink)}
+                className="focus-ring font-mono hover:underline"
+              >
+                copiar
+              </button>
+              <a href={lastTransferLink} target="_blank" rel="noreferrer" className="focus-ring font-mono hover:underline">
+                abrir
+              </a>
+            </div>
+          </div>
+        )}
+
+        {transferNotes.length > 0 && (
+          <div className="space-y-1.5">
+            <p className="text-[11px] text-steel uppercase tracking-wide font-mono mb-1">Historial</p>
+            {transferNotes.map((t) => {
+              const base = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+              const link = `${typeof window !== "undefined" ? window.location.origin : ""}${base}/guia?token=${t.share_token}`;
+              return (
+                <div key={t.id} className="flex items-center justify-between text-xs border-b border-line pb-1.5">
+                  <span className="text-steel">
+                    {t.from_location ?? "origen sin registrar"} → <span className="text-ink">{t.to_location}</span>
+                    {" · "}
+                    {new Date(t.created_at).toLocaleDateString("es-AR")}
+                  </span>
+                  <a href={link} target="_blank" rel="noreferrer" className="focus-ring text-accent font-mono hover:underline shrink-0">
+                    ver →
+                  </a>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       {/* Accesorios */}

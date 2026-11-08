@@ -41,6 +41,18 @@ export interface Machine {
   useful_life_years: number | null;
 }
 
+export interface TransferNote {
+  id: string;
+  company_id: string;
+  machine_id: string;
+  from_location: string | null;
+  to_location: string;
+  note: string | null;
+  created_by_email: string | null;
+  share_token: string;
+  created_at: string;
+}
+
 export interface MachinePhoto {
   id: string;
   company_id: string;

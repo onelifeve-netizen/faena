@@ -6,7 +6,7 @@ import { Session } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import AppShell from "@/components/AppShell";
 
-const PUBLIC_PATHS = ["/login", "/registro"];
+const PUBLIC_PATHS = ["/login", "/registro", "/guia"];
 
 export default function AuthGate({ children }: { children: React.ReactNode }) {
   const router = useRouter();
