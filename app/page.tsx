@@ -4,13 +4,14 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion, Variants } from "framer-motion";
 import { supabase } from "@/lib/supabase";
-import { Machine, Job, WorkOrder, MaintenanceSchedule, JobWip } from "@/lib/types";
+import { Machine, Job, WorkOrder, MaintenanceSchedule, JobWip, JobRequirement } from "@/lib/types";
 import StatusBadge from "@/components/StatusBadge";
 import { IconBox, IconBuilding, IconClipboard, IconWrench } from "@/components/Icons";
 import DonutChart from "@/components/DonutChart";
 import MaintenanceCalendar from "@/components/MaintenanceCalendar";
 import AnimatedNumber from "@/components/AnimatedNumber";
 import { formatMoney } from "@/lib/currency";
+import { jobMissingCount } from "@/lib/jobRequirements";
 
 const fadeUp: Variants = {
   hidden: { opacity: 0, y: 14 },
@@ -28,21 +29,24 @@ export default function Dashboard() {
   const [openOrders, setOpenOrders] = useState<WorkOrder[]>([]);
   const [schedules, setSchedules] = useState<MaintenanceSchedule[]>([]);
   const [wip, setWip] = useState<JobWip[]>([]);
+  const [requirements, setRequirements] = useState<JobRequirement[]>([]);
   const [refCurrency, setRefCurrency] = useState("USD");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
-      const [m, j, wo, ms, wipRes, settingsRes] = await Promise.all([
+      const [m, j, wo, ms, wipRes, settingsRes, reqRes] = await Promise.all([
         supabase.from("machines").select("*"),
         supabase.from("jobs").select("*").order("created_at", { ascending: false }),
         supabase.from("work_orders").select("*, machine:machines(*)").neq("status", "cerrada"),
         supabase.from("maintenance_schedules").select("*, machine:machines(*)").eq("active", true),
         supabase.from("job_wip").select("*"),
         supabase.from("settings").select("*").eq("key", "reference_currency").single(),
+        supabase.from("job_requirements").select("*"),
       ]);
       setMachines(m.data ?? []);
       setJobs(j.data ?? []);
+      setRequirements((reqRes.data as JobRequirement[]) ?? []);
       setOpenOrders((wo.data as WorkOrder[]) ?? []);
       setSchedules((ms.data as MaintenanceSchedule[]) ?? []);
       setWip((wipRes.data as JobWip[]) ?? []);
@@ -74,6 +78,11 @@ export default function Dashboard() {
 
   const enObra = machines.filter((m) => m.status === "en_obra").length;
 
+  const jobsWithMissing = jobs
+    .filter((j) => j.status !== "terminada")
+    .map((j) => ({ job: j, missing: jobMissingCount(requirements.filter((r) => r.job_id === j.id), machines) }))
+    .filter((x) => x.missing > 0);
+
   return (
     <div>
       <header className="mb-8">
@@ -91,6 +100,27 @@ export default function Dashboard() {
             <StatCard label="Órdenes de trabajo abiertas" value={openOrders.length} accent="info" icon={IconClipboard} href="/inventario" emptyCta="+ crear una orden" />
             <StatCard label="Preventivos vencidos" value={vencidas.length} accent={vencidas.length > 0 ? "warn" : "ok"} icon={IconWrench} href="/mantenimiento" emptyCta="programar un mantenimiento" />
           </motion.div>
+
+          {jobsWithMissing.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, ease: "easeOut" as const }}
+              className="bg-warn/10 border border-warn/20 rounded-tag p-4 mb-6"
+            >
+              <p className="text-sm font-medium text-warn mb-2">
+                ⚠ {jobsWithMissing.length} obra(s) con equipo/herramientas faltantes para lo que necesitan
+              </p>
+              <div className="space-y-1">
+                {jobsWithMissing.map(({ job, missing }) => (
+                  <Link key={job.id} href={`/obras/detalle?id=${job.id}`} className="focus-ring flex items-center justify-between text-xs hover:underline">
+                    <span className="text-ink">{job.name}</span>
+                    <span className="text-warn font-mono">{missing} ítem(s) sin cubrir →</span>
+                  </Link>
+                ))}
+              </div>
+            </motion.div>
+          )}
 
           <motion.div variants={stagger} initial="hidden" animate="show" className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
             <motion.div variants={fadeUp} className="col-span-2">

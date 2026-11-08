@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import Link from "next/link";
-import { Job, JobExpense, JobMachine, JobLogEntry, Machine, JobStatus, JobWorker, Contact, JobPayment, JobInvoice, JobBudgetItem, JobWip, WorkOrder, Location } from "@/lib/types";
+import { Job, JobExpense, JobMachine, JobLogEntry, Machine, JobStatus, JobWorker, Contact, JobPayment, JobInvoice, JobBudgetItem, JobWip, WorkOrder, Location, JobRequirement } from "@/lib/types";
 import StatusBadge from "@/components/StatusBadge";
 import ContactPicker from "@/components/ContactPicker";
 import { CURRENCIES, toReference, formatMoney } from "@/lib/currency";
@@ -13,6 +13,7 @@ import { logAudit } from "@/lib/audit";
 import { runMutation, functionErrorMessage } from "@/lib/errors";
 import FormError from "@/components/FormError";
 import { useMyRole, canWrite } from "@/lib/roles";
+import { requirementStatus } from "@/lib/jobRequirements";
 
 export default function ObraDetalle() {
   return (
@@ -33,6 +34,11 @@ function ObraDetalleInner() {
   const [returningJobMachineId, setReturningJobMachineId] = useState<string | null>(null);
   const [returnZoneId, setReturnZoneId] = useState("");
   const [availableMachines, setAvailableMachines] = useState<Machine[]>([]);
+  const [requirements, setRequirements] = useState<JobRequirement[]>([]);
+  const [reqDesc, setReqDesc] = useState("");
+  const [reqQty, setReqQty] = useState("1");
+  const [reqMatch, setReqMatch] = useState("");
+  const [reqError, setReqError] = useState("");
   const [log, setLog] = useState<JobLogEntry[]>([]);
   const [workers, setWorkers] = useState<JobWorker[]>([]);
   const [openWorker, setOpenWorker] = useState<string | null>(null);
@@ -83,7 +89,7 @@ function ObraDetalleInner() {
   const [noteError, setNoteError] = useState("");
 
   async function loadAll() {
-    const [jobRes, expRes, assignedRes, machRes, logRes, workersRes, payRes, invRes, itemsRes, ordersRes, wipRes, settingsRes, compRes, zonesRes] = await Promise.all([
+    const [jobRes, expRes, assignedRes, machRes, logRes, workersRes, payRes, invRes, itemsRes, ordersRes, wipRes, settingsRes, compRes, zonesRes, reqRes] = await Promise.all([
       supabase.from("jobs").select("*").eq("id", id).single(),
       supabase.from("job_expenses").select("*").eq("job_id", id).order("created_at", { ascending: false }),
       supabase.from("job_machines").select("*, machine:machines(*)").eq("job_id", id).is("returned_at", null),
@@ -98,12 +104,14 @@ function ObraDetalleInner() {
       supabase.from("settings").select("*").eq("key", "reference_currency").single(),
       supabase.from("companies").select("id").maybeSingle(),
       supabase.from("locations").select("*").order("name"),
+      supabase.from("job_requirements").select("*").eq("job_id", id).order("created_at", { ascending: true }),
     ]);
     setJob(jobRes.data);
     setExpenses(expRes.data ?? []);
     setAssigned((assignedRes.data as JobMachine[]) ?? []);
     setZones((zonesRes.data as Location[]) ?? []);
     setAvailableMachines(machRes.data ?? []);
+    setRequirements((reqRes.data as JobRequirement[]) ?? []);
     setLog(logRes.data ?? []);
     setWorkers(workersRes.data ?? []);
     setPayments(payRes.data ?? []);
@@ -292,6 +300,35 @@ function ObraDetalleInner() {
     const ok = await runMutation(() => supabase.from("job_budget_items").delete().eq("id", itemId), setItemError);
     if (!ok) return;
     await logAudit("job_budget_item", id, "ítem de presupuesto quitado", desc);
+    loadAll();
+  }
+
+  async function addRequirement(e: React.FormEvent) {
+    e.preventDefault();
+    if (!reqDesc.trim()) return;
+    const ok = await runMutation(
+      () =>
+        supabase.from("job_requirements").insert({
+          job_id: id,
+          description: reqDesc.trim(),
+          quantity: reqQty ? Number(reqQty) : 1,
+          match_text: reqMatch.trim() || null,
+        }),
+      setReqError
+    );
+    if (!ok) return;
+    await logAudit("job_requirement", id, "necesidad agregada", `${reqDesc.trim()} x${reqQty || 1}`);
+    setReqDesc("");
+    setReqQty("1");
+    setReqMatch("");
+    loadAll();
+  }
+
+  async function removeRequirement(reqId: string, desc: string) {
+    setReqError("");
+    const ok = await runMutation(() => supabase.from("job_requirements").delete().eq("id", reqId), setReqError);
+    if (!ok) return;
+    await logAudit("job_requirement", id, "necesidad quitada", desc);
     loadAll();
   }
 
@@ -743,6 +780,70 @@ function ObraDetalleInner() {
           ))}
           {payments.length === 0 && <p className="text-sm text-steel">Sin pagos registrados todavía.</p>}
         </div>
+      </section>
+
+      {/* Equipo y herramientas necesarias */}
+      <section className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6">
+        <h2 className="font-display font-bold text-sm mb-1">Equipo y herramientas necesarias</h2>
+        <p className="text-xs text-steel mb-3">
+          Lo que hace falta para este trabajo. Si completás "coincide con", se chequea automático
+          contra lo disponible en Inventario (por categoría, tipo o nombre).
+        </p>
+        {canWrite(role) && (
+          <form onSubmit={addRequirement} className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+            <input
+              className="focus-ring col-span-2 border border-line rounded-tag px-3 py-1.5 text-sm"
+              placeholder="Qué hace falta (ej: amoladora angular)"
+              value={reqDesc}
+              onChange={(e) => setReqDesc(e.target.value)}
+            />
+            <input
+              className="focus-ring border border-line rounded-tag px-3 py-1.5 text-sm"
+              placeholder="Cant."
+              type="number"
+              value={reqQty}
+              onChange={(e) => setReqQty(e.target.value)}
+            />
+            <input
+              className="focus-ring border border-line rounded-tag px-3 py-1.5 text-sm"
+              placeholder="Coincide con (opcional, ej: amoladora)"
+              value={reqMatch}
+              onChange={(e) => setReqMatch(e.target.value)}
+            />
+            <button className="focus-ring col-span-2 sm:col-span-4 bg-ink text-white text-sm py-1.5 rounded-tag">Agregar necesidad</button>
+          </form>
+        )}
+        <FormError message={reqError} />
+        {requirements.length === 0 ? (
+          <p className="text-sm text-steel">Sin necesidades cargadas todavía.</p>
+        ) : (
+          <div className="space-y-1.5">
+            {requirements.map((r) => {
+              const s = requirementStatus(r, availableMachines);
+              return (
+                <div key={r.id} className="flex items-center justify-between text-sm border-b border-line pb-1.5">
+                  <span className="text-ink">
+                    {r.description} <span className="font-mono text-steel">x{r.quantity}</span>
+                  </span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {s.checkable ? (
+                      <span className={`badge ${s.ok ? "bg-ok/10 text-ok" : "bg-warn/10 text-warn"}`}>
+                        {s.ok ? `✓ disponible (${s.available})` : `⚠ faltan ${r.quantity - s.available}`}
+                      </span>
+                    ) : (
+                      <span className="badge bg-steel/10 text-steel">sin chequeo automático</span>
+                    )}
+                    {canWrite(role) && (
+                      <button onClick={() => removeRequirement(r.id, r.description)} className="focus-ring text-xs text-warn font-mono hover:underline">
+                        quitar
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       {/* Maquinaria asignada */}

@@ -53,6 +53,16 @@ export interface ToolConditionLog {
   created_at: string;
 }
 
+export interface JobRequirement {
+  id: string;
+  company_id: string;
+  job_id: string;
+  description: string;
+  quantity: number;
+  match_text: string | null;
+  created_at: string;
+}
+
 export interface TransferNote {
   id: string;
   company_id: string;
