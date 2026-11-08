@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-import { Machine, MachineStatus, ItemType } from "@/lib/types";
-import { ITEM_TYPES, ITEM_TYPE_LABELS } from "@/lib/itemTypes";
+import { Machine, MachineStatus } from "@/lib/types";
+import { DEFAULT_ITEM_TYPES, itemTypeLabel } from "@/lib/itemTypes";
 import ItemTypeGlossary from "@/components/ItemTypeGlossary";
 import StatusBadge from "@/components/StatusBadge";
 import FormError from "@/components/FormError";
@@ -31,12 +31,14 @@ export default function Inventario() {
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");
   const [category, setCategory] = useState("");
-  const [itemType, setItemType] = useState<ItemType>("equipo");
+  const [itemType, setItemType] = useState("equipo");
+  const [addingNewType, setAddingNewType] = useState(false);
+  const [newTypeName, setNewTypeName] = useState("");
   const [location, setLocation] = useState("");
   const [serial, setSerial] = useState("");
   const [locationFilter, setLocationFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
-  const [typeFilter, setTypeFilter] = useState<ItemType | "">("");
+  const [typeFilter, setTypeFilter] = useState("");
   const [purchasePrice, setPurchasePrice] = useState("");
   const [purchaseCurrency, setPurchaseCurrency] = useState("ARS");
   const [purchaseFx, setPurchaseFx] = useState("1");
@@ -106,6 +108,7 @@ export default function Inventario() {
 
   const locations = Array.from(new Set(machines.map((m) => m.location?.trim()).filter((l): l is string => !!l))).sort();
   const categories = Array.from(new Set(machines.map((m) => m.category?.trim()).filter((c): c is string => !!c))).sort();
+  const types = Array.from(new Set([...DEFAULT_ITEM_TYPES, ...machines.map((m) => m.item_type?.trim()).filter((t): t is string => !!t)]));
   const filteredMachines = machines
     .filter((m) => !locationFilter || m.location === locationFilter)
     .filter((m) => !categoryFilter || m.category === categoryFilter)
@@ -141,10 +144,42 @@ export default function Inventario() {
         <form onSubmit={addMachine} className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6 grid grid-cols-1 sm:grid-cols-3 gap-3">
           <Field label="Nombre" value={name} onChange={setName} placeholder="Retroexcavadora, andamio, bolsas de cemento..." required />
           <label className="text-xs text-steel">
-            Tipo <ItemTypeGlossary />
-            <select className="focus-ring mt-1 w-full border border-line rounded-tag px-3 py-2 text-sm bg-white" value={itemType} onChange={(e) => setItemType(e.target.value as ItemType)}>
-              {ITEM_TYPES.map((t) => <option key={t} value={t}>{ITEM_TYPE_LABELS[t]}</option>)}
-            </select>
+            Tipo <ItemTypeGlossary customTypes={types} />
+            {addingNewType ? (
+              <div className="mt-1 flex gap-1">
+                <input
+                  className="focus-ring flex-1 border border-line rounded-tag px-3 py-2 text-sm"
+                  placeholder="Nombre del tipo nuevo"
+                  value={newTypeName}
+                  onChange={(e) => setNewTypeName(e.target.value)}
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!newTypeName.trim()) return;
+                    setItemType(newTypeName.trim().toLowerCase());
+                    setAddingNewType(false);
+                    setNewTypeName("");
+                  }}
+                  className="focus-ring text-xs bg-ink text-white px-2 rounded-tag shrink-0"
+                >
+                  ok
+                </button>
+              </div>
+            ) : (
+              <select
+                className="focus-ring mt-1 w-full border border-line rounded-tag px-3 py-2 text-sm bg-white"
+                value={itemType}
+                onChange={(e) => {
+                  if (e.target.value === "__nuevo__") setAddingNewType(true);
+                  else setItemType(e.target.value);
+                }}
+              >
+                {types.map((t) => <option key={t} value={t}>{itemTypeLabel(t)}</option>)}
+                <option value="__nuevo__">+ agregar tipo nuevo...</option>
+              </select>
+            )}
           </label>
           <Field label="Categoría" value={category} onChange={setCategory} placeholder="La que uses en tu rubro: Maquinaria, Repuesto, Insumo..." />
           <Field label="Ubicación" value={location} onChange={setLocation} placeholder="Patio, almacén, nave..." />
@@ -214,10 +249,10 @@ export default function Inventario() {
                 <select
                   className="focus-ring mt-1 block border border-line rounded-tag px-3 py-1.5 text-sm bg-white"
                   value={typeFilter}
-                  onChange={(e) => setTypeFilter(e.target.value as ItemType | "")}
+                  onChange={(e) => setTypeFilter(e.target.value)}
                 >
                   <option value="">Todos</option>
-                  {ITEM_TYPES.map((t) => <option key={t} value={t}>{ITEM_TYPE_LABELS[t]}</option>)}
+                  {types.map((t) => <option key={t} value={t}>{itemTypeLabel(t)}</option>)}
                 </select>
               </label>
               {categories.length > 0 && (
@@ -279,7 +314,7 @@ export default function Inventario() {
                     <Link href={`/inventario/detalle?id=${m.id}`} className="focus-ring">
                       <div className="flex items-center gap-2">
                         <p className="font-semibold text-sm text-ink hover:underline">{m.name}</p>
-                        <span className="badge bg-steel/10 text-steel">{ITEM_TYPE_LABELS[m.item_type]}</span>
+                        <span className="badge bg-steel/10 text-steel">{itemTypeLabel(m.item_type)}</span>
                       </div>
                       <p className="text-xs text-steel mt-0.5">
                         {m.location ? <span>{m.location} · </span> : <span className="text-steel/50">sin ubicación · </span>}

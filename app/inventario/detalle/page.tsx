@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { Machine, WorkOrder, WorkOrderType, WorkOrderPriority, WorkOrderStatus, MaintenanceSchedule, MachineDepreciation, MachineSpec } from "@/lib/types";
-import { ITEM_TYPE_LABELS } from "@/lib/itemTypes";
+import { itemTypeLabel } from "@/lib/itemTypes";
 import StatusBadge from "@/components/StatusBadge";
 import DepreciationChart from "@/components/DepreciationChart";
 import MachineTimeline from "@/components/MachineTimeline";
@@ -232,7 +232,7 @@ function InventarioDetalleInner() {
       <header className="mb-6 flex items-start justify-between">
         <div>
           <p className="font-mono text-xs text-steel uppercase tracking-wide">
-            {ITEM_TYPE_LABELS[machine.item_type]}{machine.category && ` · ${machine.category}`}{machine.location && ` · ${machine.location}`}
+            {itemTypeLabel(machine.item_type)}{machine.category && ` · ${machine.category}`}{machine.location && ` · ${machine.location}`}
           </p>
           <h1 className="font-display font-bold text-3xl text-ink">{machine.name}</h1>
           <p className="serial mt-1">{machine.serial || "sin N.° de serie"}</p>

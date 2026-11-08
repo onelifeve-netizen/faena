@@ -1,5 +1,7 @@
 export type MachineStatus = "disponible" | "en_obra" | "mantenimiento";
-export type ItemType = "equipo" | "accesorio" | "repuesto" | "herramienta" | "consumible";
+// Texto libre: arranca con 5 sugerencias por defecto (ver lib/itemTypes.ts)
+// pero no está limitado a ellas — el usuario puede agregar tipos propios.
+export type ItemType = string;
 export type JobStatus = "planificada" | "en_curso" | "terminada";
 
 export interface Company {

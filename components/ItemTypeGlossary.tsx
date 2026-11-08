@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { ITEM_TYPES, ITEM_TYPE_LABELS, ITEM_TYPE_GLOSSARY } from "@/lib/itemTypes";
+import { DEFAULT_ITEM_TYPES, ITEM_TYPE_GLOSSARY, itemTypeLabel } from "@/lib/itemTypes";
 
-export default function ItemTypeGlossary() {
+export default function ItemTypeGlossary({ customTypes = [] }: { customTypes?: string[] }) {
   const [open, setOpen] = useState(false);
+  const extra = customTypes.filter((t) => !DEFAULT_ITEM_TYPES.includes(t));
 
   return (
     <span className="relative inline-block">
@@ -20,12 +21,20 @@ export default function ItemTypeGlossary() {
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
           <div className="absolute z-20 left-0 mt-1 w-72 bg-white border border-line rounded-tag shadow-md p-3 space-y-2">
-            {ITEM_TYPES.map((t) => (
+            {DEFAULT_ITEM_TYPES.map((t) => (
               <p key={t} className="text-xs">
-                <span className="font-semibold text-ink">{ITEM_TYPE_LABELS[t]}:</span>{" "}
+                <span className="font-semibold text-ink">{itemTypeLabel(t)}:</span>{" "}
                 <span className="text-steel">{ITEM_TYPE_GLOSSARY[t]}</span>
               </p>
             ))}
+            {extra.length > 0 && (
+              <div className="pt-1.5 border-t border-line">
+                <p className="text-[10px] text-steel uppercase tracking-wide font-mono mb-1">Tipos agregados por vos</p>
+                {extra.map((t) => (
+                  <p key={t} className="text-xs text-ink">{itemTypeLabel(t)}</p>
+                ))}
+              </div>
+            )}
           </div>
         </>
       )}

@@ -1,8 +1,10 @@
-import { ItemType } from "./types";
+// Sugerencias por defecto (se guardan en minúscula, igual que ya quedaron
+// las máquinas existentes vía migration_017) — no es una lista cerrada,
+// machines.item_type es texto libre (ver migration_018_tipo_libre.sql) para
+// que cada empresa pueda agregar los tipos que le falten.
+export const DEFAULT_ITEM_TYPES = ["equipo", "accesorio", "repuesto", "herramienta", "consumible"];
 
-export const ITEM_TYPES: ItemType[] = ["equipo", "accesorio", "repuesto", "herramienta", "consumible"];
-
-export const ITEM_TYPE_LABELS: Record<ItemType, string> = {
+export const ITEM_TYPE_LABELS: Record<string, string> = {
   equipo: "Equipo",
   accesorio: "Accesorio",
   repuesto: "Repuesto",
@@ -10,7 +12,11 @@ export const ITEM_TYPE_LABELS: Record<ItemType, string> = {
   consumible: "Consumible",
 };
 
-export const ITEM_TYPE_GLOSSARY: Record<ItemType, string> = {
+export function itemTypeLabel(t: string): string {
+  return ITEM_TYPE_LABELS[t] ?? (t.charAt(0).toUpperCase() + t.slice(1));
+}
+
+export const ITEM_TYPE_GLOSSARY: Record<string, string> = {
   equipo: "Máquina o unidad principal, se identifica sola (ej: retroexcavadora, generador).",
   accesorio: "Va siempre junto a un equipo, no se usa solo (ej: balde, pala, acople).",
   repuesto: "Pieza de recambio para reparar o mantener un equipo (ej: filtro, correa, rodamiento).",
