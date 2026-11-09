@@ -140,8 +140,8 @@ export default function ExcelImport({ zones, onDone, onClose }: { zones: Locatio
                 {validCount} fila(s) lista(s) para importar
                 {errorCount > 0 && <span className="text-warn"> · {errorCount} con error (se omiten)</span>}
               </p>
-              <div className="max-h-56 overflow-y-auto border border-line rounded-tag">
-                <table className="w-full text-xs">
+              <div className="max-h-56 overflow-y-auto overflow-x-auto border border-line rounded-tag">
+                <table className="w-full min-w-[480px] text-xs">
                   <thead className="bg-base sticky top-0">
                     <tr>
                       <th className="text-left px-2 py-1">Fila</th>

@@ -699,10 +699,10 @@ function ObraDetalleInner() {
         ) : (
           <ul className="space-y-1 text-xs text-steel">
             {budgetItems.map((it) => (
-              <li key={it.id} className="flex justify-between items-center border-b border-line pb-1 gap-2">
+              <li key={it.id} className="flex flex-wrap justify-between items-center border-b border-line pb-1 gap-2">
                 {editingItemId === it.id ? (
                   <>
-                    <span className="flex-1">{it.description}</span>
+                    <span className="w-full sm:w-auto sm:flex-1">{it.description}</span>
                     <input
                       className="focus-ring w-16 border border-line rounded-tag px-2 py-0.5 text-xs"
                       type="number"
