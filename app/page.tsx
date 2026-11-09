@@ -32,6 +32,7 @@ export default function Dashboard() {
   const [conditionLogs, setConditionLogs] = useState<ToolConditionLog[]>([]);
   const [refCurrency, setRefCurrency] = useState("USD");
   const [loading, setLoading] = useState(true);
+  const [showWipBreakdown, setShowWipBreakdown] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -71,10 +72,12 @@ export default function Dashboard() {
   const vencidas = schedules.filter((s) => s.next_due_at < today);
   const proximas = schedules.filter((s) => s.next_due_at >= today && s.next_due_at <= addDays(today, s.reminder_days_before));
 
-  const activeJobIds = new Set(jobs.filter((j) => j.status !== "terminada").map((j) => j.id));
+  const activeJobsList = jobs.filter((j) => j.status !== "terminada");
+  const activeJobIds = new Set(activeJobsList.map((j) => j.id));
   const activeWip = wip.filter((w) => activeJobIds.has(w.job_id));
   const resultadoTotal = activeWip.reduce((sum, w) => sum + Number(w.estimated_result), 0);
   const netoCaja = activeWip.reduce((sum, w) => sum + (Number(w.collected_amount) - Number(w.cost_incurred)), 0);
+  const wipByJob = new Map(wip.map((w) => [w.job_id, w]));
 
   const enObra = machines.filter((m) => m.status === "en_obra").length;
 
@@ -130,33 +133,76 @@ export default function Dashboard() {
 
           <motion.div variants={stagger} initial="hidden" animate="show" className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
             <motion.div variants={fadeUp} className="col-span-2">
-            <Link
-              href="/obras"
-              className="focus-ring relative overflow-hidden rounded-tag p-5 text-white block hover:opacity-95 hover:-translate-y-0.5 transition-all duration-200"
+            <div
+              className="focus-ring relative overflow-hidden rounded-tag p-5 text-white"
               style={{ background: "linear-gradient(135deg, #12172B 0%, #3B2170 100%)" }}
             >
-              <div className="absolute -right-6 -top-10 w-40 h-40 rounded-full bg-gold/10" />
-              <div className="absolute -right-2 bottom-0 w-24 h-24 rounded-full bg-white/5" />
-              <div className="relative grid grid-cols-1 sm:grid-cols-2 gap-6">
+              <div className="absolute -right-6 -top-10 w-40 h-40 rounded-full bg-gold/10 pointer-events-none" />
+              <div className="absolute -right-2 bottom-0 w-24 h-24 rounded-full bg-white/5 pointer-events-none" />
+              <div className="relative flex items-center justify-between mb-4">
                 <div>
-                  <p className="text-xs uppercase tracking-wide font-mono mb-1 text-white/60">WIP (devengado) de obras activas</p>
-                  <p className={`font-display font-bold text-xl ${resultadoTotal >= 0 ? "text-gold" : "text-warn"}`}>
-                    {resultadoTotal >= 0 ? "Ganancia" : "Pérdida"}: {formatMoney(Math.abs(resultadoTotal), refCurrency)}
-                  </p>
-                  <p className="text-[11px] text-white/50 mt-1">Costo-a-costo: devengado menos costo incurrido.</p>
+                  <p className="text-xs uppercase tracking-wide font-mono text-white/60">Resultado financiero</p>
+                  <p className="text-[11px] text-white/40 mt-0.5">Acumulado a hoy en {activeJobsList.length} obra{activeJobsList.length === 1 ? "" : "s"} en curso</p>
                 </div>
-                <div className="border-l border-white/10 pl-6">
-                  <p className="text-xs uppercase tracking-wide font-mono mb-1 text-white/60">Neto de caja de obras activas</p>
-                  <p className={`font-display font-bold text-xl ${netoCaja >= 0 ? "text-ok" : "text-warn"}`}>
-                    {formatMoney(Math.abs(netoCaja), refCurrency)} {netoCaja >= 0 ? "a favor" : "en contra"}
-                  </p>
-                  <p className="text-[11px] text-white/50 mt-1">Lo cobrado menos lo gastado, sin estimar avance.</p>
-                </div>
+                <Link href="/obras" className="focus-ring text-[11px] text-white/60 font-mono hover:text-white hover:underline">
+                  ver obras →
+                </Link>
               </div>
-              <p className="relative text-[11px] text-white/50 mt-4 pt-3 border-t border-white/10">
-                Se arma con los gastos, facturas y cobros de todas las obras en curso — ver el detalle de cada una en Obras →
-              </p>
-            </Link>
+
+              {activeJobsList.length === 0 ? (
+                <p className="relative text-sm text-white/60">No hay obras en curso todavía.</p>
+              ) : (
+                <>
+                  <div className="relative grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    <div>
+                      <p className="text-xs uppercase tracking-wide font-mono mb-1 text-white/60">Ganancia estimada (devengado)</p>
+                      <p className={`font-display font-bold text-xl ${resultadoTotal >= 0 ? "text-gold" : "text-warn"}`}>
+                        {resultadoTotal >= 0 ? "+" : "−"}{formatMoney(Math.abs(resultadoTotal), refCurrency)}
+                      </p>
+                      <p className="text-[11px] text-white/50 mt-1">Lo devengado según avance, menos el costo incurrido — no es caja real.</p>
+                    </div>
+                    <div className="border-l border-white/10 pl-6">
+                      <p className="text-xs uppercase tracking-wide font-mono mb-1 text-white/60">Caja neta (cobrado − gastado)</p>
+                      <p className={`font-display font-bold text-xl ${netoCaja >= 0 ? "text-ok" : "text-warn"}`}>
+                        {netoCaja >= 0 ? "+" : "−"}{formatMoney(Math.abs(netoCaja), refCurrency)}
+                      </p>
+                      <p className="text-[11px] text-white/50 mt-1">Plata que realmente entró menos la que realmente salió, sin estimar avance.</p>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => setShowWipBreakdown((s) => !s)}
+                    className="focus-ring relative mt-4 pt-3 border-t border-white/10 w-full flex items-center justify-between text-[11px] text-white/60 hover:text-white"
+                  >
+                    <span>{showWipBreakdown ? "ocultar" : "ver"} desglose por obra ({activeJobsList.length})</span>
+                    <span>{showWipBreakdown ? "▴" : "▾"}</span>
+                  </button>
+
+                  {showWipBreakdown && (
+                    <div className="relative mt-2 space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                      {activeJobsList.map((j) => {
+                        const w = wipByJob.get(j.id);
+                        const result = w ? Number(w.estimated_result) : 0;
+                        const net = w ? Number(w.collected_amount) - Number(w.cost_incurred) : 0;
+                        return (
+                          <Link
+                            key={j.id}
+                            href={`/obras/detalle?id=${j.id}`}
+                            className="focus-ring flex items-center justify-between text-xs bg-white/5 hover:bg-white/10 rounded-tag px-3 py-1.5 transition-colors"
+                          >
+                            <span className="text-white/90 truncate pr-2">{j.name}</span>
+                            <span className="flex items-center gap-3 shrink-0 font-mono">
+                              <span className={result >= 0 ? "text-gold" : "text-warn"}>{result >= 0 ? "+" : "−"}{formatMoney(Math.abs(result), refCurrency)}</span>
+                              <span className={net >= 0 ? "text-ok" : "text-warn"}>{net >= 0 ? "+" : "−"}{formatMoney(Math.abs(net), refCurrency)}</span>
+                            </span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
             </motion.div>
 
             <motion.div variants={fadeUp} className="bg-panel border border-line rounded-tag shadow-card p-5 flex flex-col hover:-translate-y-0.5 hover:shadow-md transition-all duration-200">
