@@ -473,6 +473,9 @@ function ObraDetalleInner() {
 
   return (
     <div className="max-w-4xl">
+      <Link href="/obras" className="focus-ring inline-flex items-center gap-1 text-xs text-steel font-mono hover:text-accent hover:underline mb-3">
+        ← volver a Obras
+      </Link>
       <header className="mb-6 flex items-start justify-between">
         <div>
           <p className="font-mono text-xs text-steel uppercase tracking-wide">{job.client || "Obra"}</p>

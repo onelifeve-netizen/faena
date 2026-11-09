@@ -453,6 +453,9 @@ function InventarioDetalleInner() {
 
   return (
     <div className="max-w-3xl">
+      <Link href="/inventario" className="focus-ring inline-flex items-center gap-1 text-xs text-steel font-mono hover:text-accent hover:underline mb-3">
+        ← volver a Inventario
+      </Link>
       <header className="mb-6 flex items-start justify-between">
         <div>
           <p className="font-mono text-xs text-steel uppercase tracking-wide">

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { Machine, MachineStatus, Location, ToolCondition } from "@/lib/types";
 import { DEFAULT_ITEM_TYPES, itemTypeLabel, CONDITION_LABELS, CONDITION_STYLES } from "@/lib/itemTypes";
@@ -26,6 +27,7 @@ function categoryColor(category: string | null | undefined, categories: string[]
 }
 
 export default function Inventario() {
+  const router = useRouter();
   const { role } = useMyRole();
   const [machines, setMachines] = useState<Machine[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,6 +48,7 @@ export default function Inventario() {
   const [zoneError, setZoneError] = useState("");
   const [jobByMachine, setJobByMachine] = useState<Record<string, { id: string; name: string }>>({});
   const [conditionByMachine, setConditionByMachine] = useState<Record<string, ToolCondition>>({});
+  const [thumbByMachine, setThumbByMachine] = useState<Record<string, string>>({});
   const [serial, setSerial] = useState("");
   const [locationFilter, setLocationFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
@@ -62,11 +65,12 @@ export default function Inventario() {
   const [listError, setListError] = useState("");
 
   async function load() {
-    const [machRes, zonesRes, jmRes, condRes] = await Promise.all([
+    const [machRes, zonesRes, jmRes, condRes, photosRes] = await Promise.all([
       supabase.from("machines").select("*, location_obj:locations(*)").order("created_at", { ascending: false }),
       supabase.from("locations").select("*").order("name"),
       supabase.from("job_machines").select("machine_id, job:jobs(id, name)").is("returned_at", null),
       supabase.from("tool_condition_logs").select("machine_id, condition, created_at").order("created_at", { ascending: false }),
+      supabase.from("machine_photos").select("machine_id, photo_url").order("created_at", { ascending: false }),
     ]);
     if (machRes.error) setListError("No se pudo cargar el inventario. Revisá tu conexión y recargá la página.");
     setMachines((machRes.data as unknown as Machine[]) ?? []);
@@ -81,6 +85,20 @@ export default function Inventario() {
       if (!condMap[r.machine_id]) condMap[r.machine_id] = r.condition;
     });
     setConditionByMachine(condMap);
+
+    const firstPhotoByMachine: Record<string, string> = {};
+    (photosRes.data ?? []).forEach((p: any) => {
+      if (!firstPhotoByMachine[p.machine_id]) firstPhotoByMachine[p.machine_id] = p.photo_url;
+    });
+    const entries = Object.entries(firstPhotoByMachine);
+    if (entries.length > 0) {
+      const { data: signed } = await supabase.storage.from("inventario-fotos").createSignedUrls(entries.map(([, path]) => path), 3600);
+      const thumbMap: Record<string, string> = {};
+      (signed ?? []).forEach((s, i) => {
+        if (s.signedUrl) thumbMap[entries[i][0]] = s.signedUrl;
+      });
+      setThumbByMachine(thumbMap);
+    }
     setLoading(false);
   }
 
@@ -528,10 +546,21 @@ export default function Inventario() {
               </div>
               <div className="space-y-2">
                 {items.map((m) => (
-                  <div key={m.id} className={`asset-tag status-${m.status} px-5 py-4 flex items-center justify-between`}>
-                    <Link href={`/inventario/detalle?id=${m.id}`} className="focus-ring">
+                  <div
+                    key={m.id}
+                    onClick={() => router.push(`/inventario/detalle?id=${m.id}`)}
+                    className={`asset-tag status-${m.status} px-5 py-4 flex items-center gap-4 justify-between cursor-pointer`}
+                  >
+                    {thumbByMachine[m.id] ? (
+                      <img src={thumbByMachine[m.id]} alt="" className="w-12 h-12 rounded-tag object-cover shrink-0 border border-line" />
+                    ) : (
+                      <div className="w-12 h-12 rounded-tag shrink-0 border border-line bg-base flex items-center justify-center">
+                        <IconBox className="text-steel/40" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <p className="font-semibold text-sm text-ink hover:underline">{m.name}</p>
+                        <p className="font-semibold text-sm text-ink">{m.name}</p>
                         <span className="badge bg-steel/10 text-steel">{itemTypeLabel(m.item_type)}</span>
                         {conditionByMachine[m.id] && (
                           <span className={`badge ${CONDITION_STYLES[conditionByMachine[m.id]]}`}>{CONDITION_LABELS[conditionByMachine[m.id]]}</span>
@@ -544,8 +573,8 @@ export default function Inventario() {
                         {m.location_obj?.name ? <span>{m.location_obj.name} · </span> : <span className="text-steel/50">sin zona · </span>}
                         <span className="serial">{m.serial || "sin N.° de serie"}</span>
                       </p>
-                    </Link>
-                    <div className="flex items-center gap-3">
+                    </div>
+                    <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
                       {m.status === "en_obra" && jobByMachine[m.id] && (
                         <Link href={`/obras/detalle?id=${jobByMachine[m.id].id}`} className="focus-ring text-[11px] text-accent font-mono hover:underline">
                           en obra: {jobByMachine[m.id].name} →
