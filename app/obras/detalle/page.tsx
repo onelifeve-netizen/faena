@@ -472,7 +472,7 @@ function ObraDetalleInner() {
   const pctPaid = budgetRef > 0 ? Math.min(100, Math.round((paidRef / budgetRef) * 100)) : 0;
 
   return (
-    <div className="max-w-4xl">
+    <div className="max-w-6xl">
       <Link href="/obras" className="focus-ring inline-flex items-center gap-1 text-xs text-steel font-mono hover:text-accent hover:underline mb-3">
         ← volver a Obras
       </Link>
@@ -528,9 +528,12 @@ function ObraDetalleInner() {
         </div>
       </section>
 
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
+      <div className="lg:col-span-3 space-y-6">
+
       {/* WIP — avance de obra en términos financieros */}
       {wip && (
-        <section className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6">
+        <section className="bg-panel border border-line rounded-tag shadow-card p-5">
           <h2 className="font-display font-bold text-sm mb-1">WIP (avance devengado)</h2>
           <p className="text-[11px] text-steel font-mono mb-4">
             Método costo-a-costo: % avance = costo incurrido / presupuesto. Convertido a {refCurrency}.
@@ -554,7 +557,7 @@ function ObraDetalleInner() {
       )}
 
       {/* Presupuesto y moneda */}
-      <section className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6">
+      <section className="bg-panel border border-line rounded-tag shadow-card p-5">
         <div className="flex items-center justify-between mb-1">
           <h2 className="font-display font-bold text-sm">Presupuesto</h2>
           <span className="serial">
@@ -655,7 +658,7 @@ function ObraDetalleInner() {
       </section>
 
       {/* Repuestos y presupuesto */}
-      <section className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6">
+      <section className="bg-panel border border-line rounded-tag shadow-card p-5">
         <div className="flex items-center justify-between mb-1">
           <h2 className="font-display font-bold text-sm">Repuestos y presupuesto</h2>
           {budgetItems.length > 0 && (
@@ -750,7 +753,7 @@ function ObraDetalleInner() {
       </section>
 
       {/* Facturación */}
-      <section className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6">
+      <section className="bg-panel border border-line rounded-tag shadow-card p-5">
         <h2 className="font-display font-bold text-sm mb-3">Facturado al cliente</h2>
         <p className="text-[11px] text-steel font-mono mb-3">Distinto de "cobrado": esto es lo que ya se facturó, cobrado o no.</p>
         {canWrite(role) && (
@@ -802,7 +805,7 @@ function ObraDetalleInner() {
       </section>
 
       {/* Pagos recibidos */}
-      <section className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6">
+      <section className="bg-panel border border-line rounded-tag shadow-card p-5">
         <h2 className="font-display font-bold text-sm mb-3">Pagos recibidos del cliente</h2>
         {canWrite(role) && (
           <>
@@ -843,8 +846,11 @@ function ObraDetalleInner() {
         </div>
       </section>
 
+      </div>
+      <div className="lg:col-span-2 space-y-6">
+
       {/* Equipo y herramientas necesarias */}
-      <section className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6">
+      <section className="bg-panel border border-line rounded-tag shadow-card p-5">
         <h2 className="font-display font-bold text-sm mb-1">Equipo y herramientas necesarias</h2>
         <p className="text-xs text-steel mb-3">
           Lo que hace falta para este trabajo. Si completás "coincide con", se chequea automático
@@ -908,7 +914,7 @@ function ObraDetalleInner() {
       </section>
 
       {/* Maquinaria asignada */}
-      <section className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6">
+      <section className="bg-panel border border-line rounded-tag shadow-card p-5">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-display font-bold text-sm">Maquinaria en esta obra</h2>
           {assignedValueRef > 0 && (
@@ -981,7 +987,7 @@ function ObraDetalleInner() {
       </section>
 
       {/* Colaboradores */}
-      <section className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6">
+      <section className="bg-panel border border-line rounded-tag shadow-card p-5">
         <div className="flex items-center justify-between mb-1">
           <h2 className="font-display font-bold text-sm">Personas en esta obra</h2>
           {canWrite(role) && (
@@ -1056,7 +1062,7 @@ function ObraDetalleInner() {
 
       {/* Órdenes de trabajo vinculadas */}
       {relatedOrders.length > 0 && (
-        <section className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6">
+        <section className="bg-panel border border-line rounded-tag shadow-card p-5">
           <h2 className="font-display font-bold text-sm mb-3">Órdenes de trabajo de esta obra</h2>
           <div className="space-y-2">
             {relatedOrders.map((o) => (
@@ -1101,6 +1107,9 @@ function ObraDetalleInner() {
           {log.length === 0 && <p className="text-sm text-steel">Sin anotaciones todavía.</p>}
         </ul>
       </section>
+
+      </div>
+      </div>
     </div>
   );
 }
