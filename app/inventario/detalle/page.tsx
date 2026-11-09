@@ -452,7 +452,7 @@ function InventarioDetalleInner() {
   if (!machine) return <p className="text-steel text-sm">No se encontró el equipo.</p>;
 
   return (
-    <div className="max-w-3xl">
+    <div className="max-w-6xl">
       <Link href="/inventario" className="focus-ring inline-flex items-center gap-1 text-xs text-steel font-mono hover:text-accent hover:underline mb-3">
         ← volver a Inventario
       </Link>
@@ -502,8 +502,11 @@ function InventarioDetalleInner() {
         <StatusBadge status={machine.status} />
       </header>
 
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
+      <div className="lg:col-span-3 space-y-6">
+
       {/* Fotos */}
-      <section className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6">
+      <section className="bg-panel border border-line rounded-tag shadow-card p-5">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-display font-bold text-sm">Fotos</h2>
           {canWrite(role) && (
@@ -539,50 +542,8 @@ function InventarioDetalleInner() {
         )}
       </section>
 
-      {/* Asistente de mantenimiento con IA */}
-      <section className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6">
-        <h2 className="font-display font-bold text-sm mb-1">Asistente de mantenimiento (IA)</h2>
-        <p className="text-xs text-steel mb-3">
-          Describí la falla y el asistente la compara contra el historial de este equipo para
-          sugerir una causa probable y si conviene adelantar el próximo preventivo.
-        </p>
-        <form onSubmit={pedirDiagnostico} className="flex gap-2">
-          <input
-            className="focus-ring flex-1 border border-line rounded-tag px-3 py-1.5 text-sm"
-            placeholder="Ej: pierde presión al arrancar en frío"
-            value={failureDesc}
-            onChange={(e) => setFailureDesc(e.target.value)}
-          />
-          <button disabled={diagnosing} className="focus-ring bg-accent text-white text-sm px-4 py-1.5 rounded-tag hover:opacity-90 disabled:opacity-50">
-            {diagnosing ? "Pensando..." : "Diagnosticar"}
-          </button>
-        </form>
-        {diagnosisError && <p className="text-xs text-warn mt-3">{diagnosisError}</p>}
-        {diagnosis && (
-          <div className="mt-3 bg-base rounded-tag p-3 text-sm text-ink whitespace-pre-wrap">{diagnosis}</div>
-        )}
-
-        <div className="mt-4 pt-4 border-t border-line">
-          <p className="text-xs text-steel mb-2">
-            ¿No hay una falla puntual? Pedí un resumen general de salud del equipo (vida útil restante,
-            mantenimiento hecho, qué falta, y si conviene seguir invirtiendo o evaluar un reemplazo).
-          </p>
-          <button
-            onClick={pedirResumenSalud}
-            disabled={summarizing}
-            className="focus-ring bg-ink text-white text-sm px-4 py-1.5 rounded-tag hover:bg-ink/90 disabled:opacity-50"
-          >
-            {summarizing ? "Analizando..." : "Resumen de salud del equipo"}
-          </button>
-          {healthError && <p className="text-xs text-warn mt-3">{healthError}</p>}
-          {healthSummary && (
-            <div className="mt-3 bg-base rounded-tag p-3 text-sm text-ink whitespace-pre-wrap">{healthSummary}</div>
-          )}
-        </div>
-      </section>
-
       {/* Ficha técnica / especificaciones */}
-      <section className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6">
+      <section className="bg-panel border border-line rounded-tag shadow-card p-5">
         <h2 className="font-display font-bold text-sm mb-1">Especificaciones técnicas</h2>
         <p className="text-xs text-steel mb-3">
           Datos que querés tener siempre a mano sin buscarlos en un manual: tipo de aceite, modelo
@@ -648,7 +609,7 @@ function InventarioDetalleInner() {
       </section>
 
       {/* Guía de traslado */}
-      <section className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6">
+      <section className="bg-panel border border-line rounded-tag shadow-card p-5">
         <div className="flex items-center justify-between mb-1">
           <h2 className="font-display font-bold text-sm">Guía de traslado</h2>
           {canWrite(role) && !showTransferForm && (
@@ -736,7 +697,7 @@ function InventarioDetalleInner() {
       </section>
 
       {/* Accesorios */}
-      <section className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6">
+      <section className="bg-panel border border-line rounded-tag shadow-card p-5">
         <div className="flex items-center justify-between mb-1">
           <h2 className="font-display font-bold text-sm">Accesorios</h2>
           {accessories.length > 0 && (
@@ -800,7 +761,7 @@ function InventarioDetalleInner() {
       </section>
 
       {/* Estado y desgaste */}
-      <section className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6">
+      <section className="bg-panel border border-line rounded-tag shadow-card p-5">
         <div className="flex items-center justify-between mb-1">
           <h2 className="font-display font-bold text-sm">Estado y desgaste</h2>
           {conditionLogs[0] && (
@@ -850,8 +811,53 @@ function InventarioDetalleInner() {
         )}
       </section>
 
+      </div>
+      <div className="lg:col-span-2 space-y-6">
+
+      {/* Asistente de mantenimiento con IA */}
+      <section className="bg-panel border border-line rounded-tag shadow-card p-5">
+        <h2 className="font-display font-bold text-sm mb-1">Asistente de mantenimiento (IA)</h2>
+        <p className="text-xs text-steel mb-3">
+          Describí la falla y el asistente la compara contra el historial de este equipo para
+          sugerir una causa probable y si conviene adelantar el próximo preventivo.
+        </p>
+        <form onSubmit={pedirDiagnostico} className="flex gap-2">
+          <input
+            className="focus-ring flex-1 border border-line rounded-tag px-3 py-1.5 text-sm"
+            placeholder="Ej: pierde presión al arrancar en frío"
+            value={failureDesc}
+            onChange={(e) => setFailureDesc(e.target.value)}
+          />
+          <button disabled={diagnosing} className="focus-ring bg-accent text-white text-sm px-4 py-1.5 rounded-tag hover:opacity-90 disabled:opacity-50">
+            {diagnosing ? "Pensando..." : "Diagnosticar"}
+          </button>
+        </form>
+        {diagnosisError && <p className="text-xs text-warn mt-3">{diagnosisError}</p>}
+        {diagnosis && (
+          <div className="mt-3 bg-base rounded-tag p-3 text-sm text-ink whitespace-pre-wrap">{diagnosis}</div>
+        )}
+
+        <div className="mt-4 pt-4 border-t border-line">
+          <p className="text-xs text-steel mb-2">
+            ¿No hay una falla puntual? Pedí un resumen general de salud del equipo (vida útil restante,
+            mantenimiento hecho, qué falta, y si conviene seguir invirtiendo o evaluar un reemplazo).
+          </p>
+          <button
+            onClick={pedirResumenSalud}
+            disabled={summarizing}
+            className="focus-ring bg-ink text-white text-sm px-4 py-1.5 rounded-tag hover:bg-ink/90 disabled:opacity-50"
+          >
+            {summarizing ? "Analizando..." : "Resumen de salud del equipo"}
+          </button>
+          {healthError && <p className="text-xs text-warn mt-3">{healthError}</p>}
+          {healthSummary && (
+            <div className="mt-3 bg-base rounded-tag p-3 text-sm text-ink whitespace-pre-wrap">{healthSummary}</div>
+          )}
+        </div>
+      </section>
+
       {/* Línea de tiempo del equipo */}
-      <section className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6">
+      <section className="bg-panel border border-line rounded-tag shadow-card p-5">
         <h2 className="font-display font-bold text-sm mb-1">Línea de tiempo del equipo</h2>
         {machine.purchase_date ? (
           <>
@@ -874,7 +880,7 @@ function InventarioDetalleInner() {
 
       {/* Depreciación e inversión */}
       {depreciation?.purchase_price != null && depreciation.purchase_price_ref != null ? (
-        <section className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6">
+        <section className="bg-panel border border-line rounded-tag shadow-card p-5">
           <h2 className="font-display font-bold text-sm mb-1">Depreciación e inversión</h2>
           <p className="text-[11px] text-steel font-mono mb-4">
             Método lineal: valor de compra ÷ vida útil en años. Comprado en {formatNumber(depreciation.purchase_price)} {depreciation.purchase_price_currency}, convertido acá a tu moneda de referencia.
@@ -899,7 +905,7 @@ function InventarioDetalleInner() {
           )}
         </section>
       ) : (
-        <section className="bg-panel border border-dashed border-line rounded-tag shadow-card p-5 mb-6">
+        <section className="bg-panel border border-dashed border-line rounded-tag shadow-card p-5">
           <p className="text-xs text-steel">
             Sin datos de compra cargados — no se puede calcular depreciación ni comparar contra el gasto de mantenimiento.
             Editalo desde Inventario para agregar precio, fecha de compra y vida útil.
@@ -908,7 +914,7 @@ function InventarioDetalleInner() {
       )}
 
       {/* Mantenimiento preventivo programado */}
-      <section className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6">
+      <section className="bg-panel border border-line rounded-tag shadow-card p-5">
         <h2 className="font-display font-bold text-sm mb-3">Mantenimiento preventivo</h2>
         {schedules.length === 0 ? (
           <p className="text-sm text-steel">Sin reglas programadas para este equipo.</p>
@@ -1026,6 +1032,9 @@ function InventarioDetalleInner() {
           </div>
         )}
       </section>
+
+      </div>
+      </div>
     </div>
   );
 }
