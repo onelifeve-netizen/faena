@@ -9,6 +9,7 @@ interface GuiaData {
   machine_name: string;
   machine_serial: string;
   machine_category: string;
+  photo_url: string | null;
   from_location: string | null;
   to_location: string;
   note: string | null;
@@ -80,6 +81,11 @@ function GuiaInner() {
 
             <p className="font-mono text-xs text-steel uppercase tracking-wide mb-1">Comprobante</p>
             <h1 className="font-display font-bold text-2xl text-ink mb-6">Guía de traslado</h1>
+
+            {data.photo_url && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={data.photo_url} alt={data.machine_name} className="w-full max-h-72 object-cover rounded-tag border border-line mb-5" />
+            )}
 
             <dl className="space-y-3 text-sm">
               <Row label="Equipo" value={`${data.machine_name}${data.machine_category ? ` (${data.machine_category})` : ""}`} />

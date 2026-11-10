@@ -13,7 +13,7 @@ import { logAudit } from "@/lib/audit";
 import { runMutation, functionErrorMessage } from "@/lib/errors";
 import FormError from "@/components/FormError";
 import { useMyRole, canWrite } from "@/lib/roles";
-import { requirementStatus } from "@/lib/jobRequirements";
+import { requirementStatus, matchingAvailable } from "@/lib/jobRequirements";
 
 export default function ObraDetalle() {
   return (
@@ -39,12 +39,14 @@ function ObraDetalleInner() {
   const [reqQty, setReqQty] = useState("1");
   const [reqMatch, setReqMatch] = useState("");
   const [reqError, setReqError] = useState("");
+  const [openRequirementId, setOpenRequirementId] = useState<string | null>(null);
   const [log, setLog] = useState<JobLogEntry[]>([]);
   const [workers, setWorkers] = useState<JobWorker[]>([]);
   const [openWorker, setOpenWorker] = useState<string | null>(null);
   const [showWorkerForm, setShowWorkerForm] = useState(false);
   const [pickedContact, setPickedContact] = useState<Contact | null>(null);
-  const [wRole, setWRole] = useState("");
+  const [wRole, setWRole] = useState("Trabajador");
+  const [wRoleOther, setWRoleOther] = useState("");
   const [loading, setLoading] = useState(true);
   const [payments, setPayments] = useState<JobPayment[]>([]);
   const [invoices, setInvoices] = useState<JobInvoice[]>([]);
@@ -96,7 +98,7 @@ function ObraDetalleInner() {
       supabase.from("jobs").select("*").eq("id", id).single(),
       supabase.from("job_expenses").select("*").eq("job_id", id).order("created_at", { ascending: false }),
       supabase.from("job_machines").select("*, machine:machines(*)").eq("job_id", id).is("returned_at", null),
-      supabase.from("machines").select("*").eq("status", "disponible"),
+      supabase.from("machines").select("*, location_obj:locations(*)").eq("status", "disponible"),
       supabase.from("job_log").select("*").eq("job_id", id).order("created_at", { ascending: false }),
       supabase.from("job_workers").select("*").eq("job_id", id).order("created_at", { ascending: true }),
       supabase.from("job_payments").select("*").eq("job_id", id).order("paid_at", { ascending: false }),
@@ -313,6 +315,17 @@ function ObraDetalleInner() {
     setItemError("");
   }
 
+  async function useBudgetItemsTotalAsBudget() {
+    const total = Math.round(budgetItemsTotalRef);
+    const ok = await runMutation(
+      () => supabase.from("jobs").update({ budget: total, budget_currency: refCurrency, budget_fx_rate: 1 }).eq("id", id),
+      setItemError
+    );
+    if (!ok) return;
+    await logAudit("job", id, "presupuesto actualizado", `Se usó el total de repuestos (${formatMoney(total, refCurrency)}) como presupuesto`);
+    loadAll();
+  }
+
   async function saveEditBudgetItem(itemId: string, desc: string) {
     if (!editQty || !editPrice) return;
     const ok = await runMutation(
@@ -426,22 +439,24 @@ function ObraDetalleInner() {
   async function addWorker(e: React.FormEvent) {
     e.preventDefault();
     if (!pickedContact) return;
+    const finalRole = wRole === "Otro" ? wRoleOther.trim() || "Otro" : wRole;
     const ok = await runMutation(
       () =>
         supabase.from("job_workers").insert({
           job_id: id,
           contact_id: pickedContact.id,
           name: pickedContact.name,
-          role: wRole || pickedContact.role,
+          role: finalRole,
           phone: pickedContact.phone,
           email: pickedContact.email,
         }),
       setWorkerError
     );
     if (!ok) return;
-    await logAudit("job_worker", id, "colaborador agregado", `${pickedContact.name} se sumó a "${job?.name}"`);
+    await logAudit("job_worker", id, "colaborador agregado", `${pickedContact.name} (${finalRole}) se sumó a "${job?.name}"`);
     setPickedContact(null);
-    setWRole("");
+    setWRole("Trabajador");
+    setWRoleOther("");
     setShowWorkerForm(false);
     loadAll();
   }
@@ -463,6 +478,7 @@ function ObraDetalleInner() {
   const invoicedRef = invoices.reduce((sum, inv) => sum + toReference(Number(inv.amount), Number(inv.fx_rate)), 0);
   const pendingRef = budgetRef - paidRef;
   const budgetItemsTotalRef = budgetItems.reduce((sum, it) => sum + toReference(it.quantity * it.unit_price, it.fx_rate), 0);
+  const assignableMachines = availableMachines.filter((m) => ["equipo", "herramienta", "accesorio"].includes(m.item_type));
   const assignedValueRef = assigned.reduce((sum, am) => {
     const m = am.machine;
     if (!m?.purchase_price) return sum;
@@ -668,6 +684,14 @@ function ObraDetalleInner() {
         <p className="text-[11px] text-steel font-mono mb-3">
           Calculadora de materiales y mano de obra para armar o validar el presupuesto — no reemplaza el campo "Presupuesto" de arriba, lo ayuda a construir.
         </p>
+        {canWrite(role) && budgetItems.length > 0 && (
+          <button
+            onClick={useBudgetItemsTotalAsBudget}
+            className="focus-ring text-[11px] text-accent font-mono hover:underline mb-3 block"
+          >
+            usar este total ({formatMoney(budgetItemsTotalRef, refCurrency)}) como Presupuesto →
+          </button>
+        )}
         {canWrite(role) && (
           <>
             <form onSubmit={addBudgetItem} className="grid grid-cols-2 sm:grid-cols-6 gap-2 mb-4">
@@ -763,6 +787,15 @@ function ObraDetalleInner() {
               <input type="file" accept="image/*,application/pdf" className="hidden" onChange={handleInvoicePhotoManual} disabled={uploadingInvPhoto} />
             </label>
             {invPhotoUrl && <p className="text-[11px] text-ok mb-2">Archivo adjunto — se guarda al registrar la factura.</p>}
+            {pendingRef > 0 && invCurrency === refCurrency && (
+              <button
+                type="button"
+                onClick={() => setInvAmount(String(Math.round(pendingRef)))}
+                className="focus-ring text-[11px] text-accent font-mono hover:underline mb-1.5 block"
+              >
+                usar saldo pendiente ({formatMoney(pendingRef, refCurrency)}) →
+              </button>
+            )}
             <form onSubmit={addInvoice} className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
               <input
                 className="focus-ring border border-line rounded-tag px-3 py-1.5 text-sm"
@@ -809,6 +842,15 @@ function ObraDetalleInner() {
         <h2 className="font-display font-bold text-sm mb-3">Pagos recibidos del cliente</h2>
         {canWrite(role) && (
           <>
+            {pendingRef > 0 && payCurrency === refCurrency && (
+              <button
+                type="button"
+                onClick={() => setPayAmount(String(Math.round(pendingRef)))}
+                className="focus-ring text-[11px] text-accent font-mono hover:underline mb-1.5 block"
+              >
+                usar saldo pendiente ({formatMoney(pendingRef, refCurrency)}) →
+              </button>
+            )}
             <form onSubmit={addPayment} className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
               <input
                 className="focus-ring border border-line rounded-tag px-3 py-1.5 text-sm"
@@ -887,25 +929,46 @@ function ObraDetalleInner() {
           <div className="space-y-1.5">
             {requirements.map((r) => {
               const s = requirementStatus(r, availableMachines);
+              const matches = s.checkable ? matchingAvailable(availableMachines, r.match_text ?? "") : [];
+              const isOpen = openRequirementId === r.id;
               return (
-                <div key={r.id} className="flex items-center justify-between text-sm border-b border-line pb-1.5">
-                  <span className="text-ink">
-                    {r.description} <span className="font-mono text-steel">x{r.quantity}</span>
-                  </span>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {s.checkable ? (
-                      <span className={`badge ${s.ok ? "bg-ok/10 text-ok" : "bg-warn/10 text-warn"}`}>
-                        {s.ok ? `✓ disponible (${s.available})` : `⚠ faltan ${r.quantity - s.available}`}
-                      </span>
-                    ) : (
-                      <span className="badge bg-steel/10 text-steel">sin chequeo automático</span>
-                    )}
-                    {canWrite(role) && (
-                      <button onClick={() => removeRequirement(r.id, r.description)} className="focus-ring text-xs text-warn font-mono hover:underline">
-                        quitar
-                      </button>
-                    )}
+                <div key={r.id} className="border-b border-line pb-1.5">
+                  <div className="flex items-center justify-between text-sm">
+                    <button
+                      onClick={() => s.checkable && setOpenRequirementId(isOpen ? null : r.id)}
+                      className={`focus-ring text-left text-ink ${s.checkable ? "hover:underline" : ""}`}
+                    >
+                      {r.description} <span className="font-mono text-steel">x{r.quantity}</span>
+                    </button>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {s.checkable ? (
+                        <span className={`badge ${s.ok ? "bg-ok/10 text-ok" : "bg-warn/10 text-warn"}`}>
+                          {s.ok ? `✓ disponible (${s.available})` : `⚠ faltan ${r.quantity - s.available}`}
+                        </span>
+                      ) : (
+                        <span className="badge bg-steel/10 text-steel">sin chequeo automático</span>
+                      )}
+                      {canWrite(role) && (
+                        <button onClick={() => removeRequirement(r.id, r.description)} className="focus-ring text-xs text-warn font-mono hover:underline">
+                          quitar
+                        </button>
+                      )}
+                    </div>
                   </div>
+                  {isOpen && (
+                    <div className="mt-1.5 mb-1 pl-2 border-l-2 border-line space-y-1">
+                      {matches.length === 0 ? (
+                        <p className="text-xs text-steel">Ningún artículo disponible coincide con "{r.match_text}".</p>
+                      ) : (
+                        matches.map((m) => (
+                          <Link key={m.id} href={`/inventario/detalle?id=${m.id}`} className="focus-ring flex items-center justify-between text-xs hover:underline">
+                            <span className="text-ink">{m.name}</span>
+                            <span className="text-steel">{m.location_obj?.name ?? "sin zona"} →</span>
+                          </Link>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -930,7 +993,7 @@ function ObraDetalleInner() {
                 onChange={(e) => setSelectedMachine(e.target.value)}
               >
                 <option value="">Elegir máquina disponible...</option>
-                {availableMachines.map((m) => (
+                {assignableMachines.map((m) => (
                   <option key={m.id} value={m.id}>{m.name}</option>
                 ))}
               </select>
@@ -1006,6 +1069,28 @@ function ObraDetalleInner() {
 
         {showWorkerForm && canWrite(role) && (
           <form onSubmit={addWorker} className="mb-4 bg-base rounded-tag p-3 space-y-2">
+            <label className="block text-xs text-steel">
+              1. ¿Qué rol cumple en esta obra?
+              <select
+                className="focus-ring mt-1 w-full border border-line rounded-tag px-3 py-2 text-sm bg-white"
+                value={wRole}
+                onChange={(e) => setWRole(e.target.value)}
+              >
+                <option value="Trabajador">Trabajador</option>
+                <option value="Supervisor">Supervisor</option>
+                <option value="Gerente">Gerente</option>
+                <option value="Otro">Otro...</option>
+              </select>
+            </label>
+            {wRole === "Otro" && (
+              <input
+                className="focus-ring w-full border border-line rounded-tag px-3 py-1.5 text-sm"
+                placeholder="Especificar rol (ej: capataz, electricista)"
+                value={wRoleOther}
+                onChange={(e) => setWRoleOther(e.target.value)}
+              />
+            )}
+            <p className="text-xs text-steel pt-1">2. ¿Quién es?</p>
             {pickedContact ? (
               <div className="flex items-center justify-between border border-line rounded-tag px-3 py-2 bg-white">
                 <div>
@@ -1019,12 +1104,6 @@ function ObraDetalleInner() {
             ) : (
               <ContactPicker onSelect={setPickedContact} placeholder="Buscar contacto o escribir uno nuevo..." />
             )}
-            <input
-              className="focus-ring w-full border border-line rounded-tag px-3 py-1.5 text-sm"
-              placeholder="Rol en esta obra (opcional, ej: capataz)"
-              value={wRole}
-              onChange={(e) => setWRole(e.target.value)}
-            />
             <button disabled={!pickedContact} className="focus-ring w-full bg-ink text-white text-sm py-1.5 rounded-tag disabled:opacity-40">
               Agregar a la obra
             </button>
@@ -1047,6 +1126,11 @@ function ObraDetalleInner() {
                   <p>Teléfono: <span className="serial">{w.phone || "—"}</span></p>
                   <p>Email: {w.email || "—"}</p>
                   {w.notes && <p>Notas: {w.notes}</p>}
+                  {w.contact_id && (
+                    <Link href={`/contactos?open=${w.contact_id}`} className="focus-ring block text-accent font-mono hover:underline">
+                      ver ficha de contacto →
+                    </Link>
+                  )}
                   {canWrite(role) && (
                     <button onClick={() => removeWorker(w.id, w.name)} className="focus-ring text-accent font-mono mt-2 hover:underline">
                       quitar de la obra

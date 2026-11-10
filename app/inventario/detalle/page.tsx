@@ -35,13 +35,6 @@ function InventarioDetalleInner() {
   const [specValue, setSpecValue] = useState("");
   const [specError, setSpecError] = useState("");
   const [loading, setLoading] = useState(true);
-  const [failureDesc, setFailureDesc] = useState("");
-  const [diagnosing, setDiagnosing] = useState(false);
-  const [diagnosis, setDiagnosis] = useState<string | null>(null);
-  const [diagnosisError, setDiagnosisError] = useState("");
-  const [summarizing, setSummarizing] = useState(false);
-  const [healthSummary, setHealthSummary] = useState<string | null>(null);
-  const [healthError, setHealthError] = useState("");
   const [readingTag, setReadingTag] = useState(false);
   const [tagSuggestions, setTagSuggestions] = useState<{ label: string; value: string }[]>([]);
   const [tagError, setTagError] = useState("");
@@ -93,7 +86,13 @@ function InventarioDetalleInner() {
       supabase.from("locations").select("*").order("name"),
       supabase.from("job_machines").select("job:jobs(id, name)").eq("machine_id", id).is("returned_at", null).maybeSingle(),
       supabase.from("machines").select("*").eq("parent_machine_id", id).order("name"),
-      supabase.from("machines").select("*").is("parent_machine_id", null).neq("id", id).order("name"),
+      supabase
+        .from("machines")
+        .select("*")
+        .is("parent_machine_id", null)
+        .neq("id", id)
+        .in("item_type", ["accesorio", "herramienta", "consumible", "repuesto"])
+        .order("name"),
       supabase.from("transfer_notes").select("*").eq("machine_id", id).order("created_at", { ascending: false }),
       supabase.from("tool_condition_logs").select("*").eq("machine_id", id).order("created_at", { ascending: false }),
     ]);
@@ -379,37 +378,6 @@ function InventarioDetalleInner() {
     load();
   }
 
-  async function pedirDiagnostico(e: React.FormEvent) {
-    e.preventDefault();
-    if (!failureDesc.trim()) return;
-    setDiagnosing(true);
-    setDiagnosis(null);
-    setDiagnosisError("");
-    const { data, error } = await supabase.functions.invoke("ai-diagnostico", {
-      body: { machine_id: id, failure_description: failureDesc },
-    });
-    setDiagnosing(false);
-    if (error) {
-      setDiagnosisError(await functionErrorMessage(error, "No se pudo obtener el diagnóstico. ¿Está desplegada la función ai-diagnostico en Supabase?"));
-      return;
-    }
-    setDiagnosis(data?.suggestion ?? "Sin respuesta.");
-  }
-
-  async function pedirResumenSalud() {
-    setSummarizing(true);
-    setHealthSummary(null);
-    setHealthError("");
-    const { data, error } = await supabase.functions.invoke("resumen-salud", {
-      body: { machine_id: id },
-    });
-    setSummarizing(false);
-    if (error) {
-      setHealthError(await functionErrorMessage(error, "No se pudo obtener el resumen. ¿Está desplegada la función resumen-salud en Supabase?"));
-      return;
-    }
-    setHealthSummary(data?.summary ?? "Sin respuesta.");
-  }
 
   function fileToBase64(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -813,48 +781,6 @@ function InventarioDetalleInner() {
 
       </div>
       <div className="lg:col-span-2 space-y-6">
-
-      {/* Asistente de mantenimiento con IA */}
-      <section className="bg-panel border border-line rounded-tag shadow-card p-5">
-        <h2 className="font-display font-bold text-sm mb-1">Asistente de mantenimiento (IA)</h2>
-        <p className="text-xs text-steel mb-3">
-          Describí la falla y el asistente la compara contra el historial de este equipo para
-          sugerir una causa probable y si conviene adelantar el próximo preventivo.
-        </p>
-        <form onSubmit={pedirDiagnostico} className="flex gap-2">
-          <input
-            className="focus-ring flex-1 border border-line rounded-tag px-3 py-1.5 text-sm"
-            placeholder="Ej: pierde presión al arrancar en frío"
-            value={failureDesc}
-            onChange={(e) => setFailureDesc(e.target.value)}
-          />
-          <button disabled={diagnosing} className="focus-ring bg-accent text-white text-sm px-4 py-1.5 rounded-tag hover:opacity-90 disabled:opacity-50">
-            {diagnosing ? "Pensando..." : "Diagnosticar"}
-          </button>
-        </form>
-        {diagnosisError && <p className="text-xs text-warn mt-3">{diagnosisError}</p>}
-        {diagnosis && (
-          <div className="mt-3 bg-base rounded-tag p-3 text-sm text-ink whitespace-pre-wrap">{diagnosis}</div>
-        )}
-
-        <div className="mt-4 pt-4 border-t border-line">
-          <p className="text-xs text-steel mb-2">
-            ¿No hay una falla puntual? Pedí un resumen general de salud del equipo (vida útil restante,
-            mantenimiento hecho, qué falta, y si conviene seguir invirtiendo o evaluar un reemplazo).
-          </p>
-          <button
-            onClick={pedirResumenSalud}
-            disabled={summarizing}
-            className="focus-ring bg-ink text-white text-sm px-4 py-1.5 rounded-tag hover:bg-ink/90 disabled:opacity-50"
-          >
-            {summarizing ? "Analizando..." : "Resumen de salud del equipo"}
-          </button>
-          {healthError && <p className="text-xs text-warn mt-3">{healthError}</p>}
-          {healthSummary && (
-            <div className="mt-3 bg-base rounded-tag p-3 text-sm text-ink whitespace-pre-wrap">{healthSummary}</div>
-          )}
-        </div>
-      </section>
 
       {/* Línea de tiempo del equipo */}
       <section className="bg-panel border border-line rounded-tag shadow-card p-5">

@@ -231,6 +231,20 @@ export default function Inventario() {
         )}
       </header>
 
+      {zones.length === 0 && canWrite(role) && !loading && (
+        <div className="bg-info/10 border border-info/20 rounded-tag px-4 py-3 mb-6 flex items-center justify-between gap-3">
+          <p className="text-xs text-ink">
+            💡 Antes de cargar artículos, te conviene crear tus zonas (ej: "Almacén A", "Patio", "Obra Norte") — así cada artículo queda ubicado desde el inicio.
+          </p>
+          <button
+            onClick={() => setManageZones(true)}
+            className="focus-ring text-xs bg-ink text-white px-3 py-1.5 rounded-tag shrink-0"
+          >
+            crear zonas
+          </button>
+        </div>
+      )}
+
       {showImport && canWrite(role) && (
         <ExcelImport zones={zones} onDone={load} onClose={() => setShowImport(false)} />
       )}

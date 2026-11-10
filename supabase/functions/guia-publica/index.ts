@@ -28,7 +28,7 @@ Deno.serve(async (req) => {
 
   const { data: note, error } = await supabase
     .from("transfer_notes")
-    .select("*, machine:machines(name, serial, category)")
+    .select("*, machine:machines(id, name, serial, category)")
     .eq("share_token", token)
     .maybeSingle();
 
@@ -38,12 +38,28 @@ Deno.serve(async (req) => {
 
   const { data: company } = await supabase.from("companies").select("name").eq("id", note.company_id).maybeSingle();
 
+  let photo_url: string | null = null;
+  if (note.machine?.id) {
+    const { data: photo } = await supabase
+      .from("machine_photos")
+      .select("photo_url")
+      .eq("machine_id", note.machine.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (photo?.photo_url) {
+      const { data: signed } = await supabase.storage.from("inventario-fotos").createSignedUrl(photo.photo_url, 86400);
+      photo_url = signed?.signedUrl ?? null;
+    }
+  }
+
   return Response.json(
     {
       company_name: company?.name ?? "",
       machine_name: note.machine?.name ?? "",
       machine_serial: note.machine?.serial ?? "",
       machine_category: note.machine?.category ?? "",
+      photo_url,
       from_location: note.from_location,
       to_location: note.to_location,
       note: note.note,

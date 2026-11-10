@@ -1,13 +1,17 @@
 import { Machine, JobRequirement } from "./types";
 
-export function countAvailable(machines: Machine[], matchText: string): number {
+export function matchingAvailable(machines: Machine[], matchText: string): Machine[] {
   const q = matchText.trim().toLowerCase();
-  if (!q) return 0;
+  if (!q) return [];
   return machines.filter(
     (m) =>
       m.status === "disponible" &&
       ((m.category ?? "").toLowerCase().includes(q) || (m.item_type ?? "").toLowerCase().includes(q) || m.name.toLowerCase().includes(q))
-  ).length;
+  );
+}
+
+export function countAvailable(machines: Machine[], matchText: string): number {
+  return matchingAvailable(machines, matchText).length;
 }
 
 export function requirementStatus(req: JobRequirement, machines: Machine[]): { checkable: boolean; available: number; ok: boolean } {

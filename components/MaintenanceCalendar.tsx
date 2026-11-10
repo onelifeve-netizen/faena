@@ -1,6 +1,10 @@
 import { MaintenanceSchedule } from "@/lib/types";
 
 const WEEKDAYS = ["L", "M", "X", "J", "V", "S", "D"];
+const MONTH_NAMES = [
+  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+];
 
 export default function MaintenanceCalendar({ schedules }: { schedules: MaintenanceSchedule[] }) {
   const today = new Date();
@@ -24,6 +28,7 @@ export default function MaintenanceCalendar({ schedules }: { schedules: Maintena
 
   return (
     <div>
+      <p className="text-center text-sm font-semibold text-ink mb-2">{MONTH_NAMES[month]} {year}</p>
       <div className="grid grid-cols-7 gap-1 mb-1">
         {WEEKDAYS.map((w) => (
           <div key={w} className="text-center text-[10px] text-steel font-mono">{w}</div>
