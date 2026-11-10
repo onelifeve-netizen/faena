@@ -63,6 +63,7 @@ function InventarioDetalleInner() {
   const [linkAccessoryId, setLinkAccessoryId] = useState("");
   const [newAccessoryName, setNewAccessoryName] = useState("");
   const [accessoryError, setAccessoryError] = useState("");
+  const [accessorySuccess, setAccessorySuccess] = useState("");
   const [transferNotes, setTransferNotes] = useState<TransferNote[]>([]);
   const [showTransferForm, setShowTransferForm] = useState(false);
   const [transferDestination, setTransferDestination] = useState("");
@@ -211,6 +212,11 @@ function InventarioDetalleInner() {
     load();
   }
 
+  function flashAccessorySuccess(text: string) {
+    setAccessorySuccess(text);
+    setTimeout(() => setAccessorySuccess(""), 2500);
+  }
+
   async function linkAccessory() {
     if (!linkAccessoryId) return;
     setAccessoryError("");
@@ -219,6 +225,7 @@ function InventarioDetalleInner() {
     const accName = unlinkedMachines.find((m) => m.id === linkAccessoryId)?.name ?? "";
     await logAudit("machine", linkAccessoryId, "vinculado como accesorio", `"${accName}" vinculado a "${machine?.name}"`);
     setLinkAccessoryId("");
+    flashAccessorySuccess(`✓ "${accName}" vinculado.`);
     load();
   }
 
@@ -239,6 +246,7 @@ function InventarioDetalleInner() {
     );
     if (!ok) return;
     await logAudit("machine", id, "accesorio creado", `"${newAccessoryName.trim()}" creado para "${machine?.name}"`);
+    flashAccessorySuccess(`✓ "${newAccessoryName.trim()}" creado.`);
     setNewAccessoryName("");
     load();
   }
@@ -248,6 +256,7 @@ function InventarioDetalleInner() {
     const ok = await runMutation(() => supabase.from("machines").update({ parent_machine_id: null }).eq("id", acc.id), setAccessoryError);
     if (!ok) return;
     await logAudit("machine", acc.id, "desvinculado de equipo", `"${acc.name}" ya no depende de "${machine?.name}"`);
+    flashAccessorySuccess(`✓ "${acc.name}" desvinculado.`);
     load();
   }
 
@@ -726,6 +735,7 @@ function InventarioDetalleInner() {
           </>
         )}
         <FormError message={accessoryError} />
+        {accessorySuccess && <p className="text-xs text-ok mt-1">{accessorySuccess}</p>}
       </section>
 
       {/* Estado y desgaste */}

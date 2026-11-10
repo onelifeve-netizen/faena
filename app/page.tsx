@@ -155,18 +155,18 @@ export default function Dashboard() {
                 <>
                   <div className="relative grid grid-cols-1 sm:grid-cols-2 gap-6">
                     <div>
-                      <p className="text-xs uppercase tracking-wide font-mono mb-1 text-white/60">Ganancia estimada (devengado)</p>
+                      <p className="text-xs uppercase tracking-wide font-mono mb-1 text-white/60">Ganancia estimada</p>
                       <p className={`font-display font-bold text-xl ${resultadoTotal >= 0 ? "text-gold" : "text-warn"}`}>
                         {resultadoTotal >= 0 ? "+" : "−"}{formatMoney(Math.abs(resultadoTotal), refCurrency)}
                       </p>
-                      <p className="text-[11px] text-white/50 mt-1">Lo devengado según avance, menos el costo incurrido — no es caja real.</p>
+                      <p className="text-xs text-white/50 mt-1">Según el avance de la obra — es una estimación, no plata en caja.</p>
                     </div>
                     <div className="border-l border-white/10 pl-6">
-                      <p className="text-xs uppercase tracking-wide font-mono mb-1 text-white/60">Caja neta (cobrado − gastado)</p>
+                      <p className="text-xs uppercase tracking-wide font-mono mb-1 text-white/60">Plata real en caja</p>
                       <p className={`font-display font-bold text-xl ${netoCaja >= 0 ? "text-ok" : "text-warn"}`}>
                         {netoCaja >= 0 ? "+" : "−"}{formatMoney(Math.abs(netoCaja), refCurrency)}
                       </p>
-                      <p className="text-[11px] text-white/50 mt-1">Plata que realmente entró menos la que realmente salió, sin estimar avance.</p>
+                      <p className="text-xs text-white/50 mt-1">Lo que entró menos lo que salió, de verdad.</p>
                     </div>
                   </div>
 

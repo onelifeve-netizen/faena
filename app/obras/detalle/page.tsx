@@ -91,6 +91,7 @@ function ObraDetalleInner() {
   const [paymentError, setPaymentError] = useState("");
   const [machineError, setMachineError] = useState("");
   const [workerError, setWorkerError] = useState("");
+  const [workerSuccess, setWorkerSuccess] = useState("");
   const [noteError, setNoteError] = useState("");
 
   async function loadAll() {
@@ -454,6 +455,8 @@ function ObraDetalleInner() {
     );
     if (!ok) return;
     await logAudit("job_worker", id, "colaborador agregado", `${pickedContact.name} (${finalRole}) se sumó a "${job?.name}"`);
+    setWorkerSuccess(`✓ ${pickedContact.name} agregado a la obra.`);
+    setTimeout(() => setWorkerSuccess(""), 2500);
     setPickedContact(null);
     setWRole("Trabajador");
     setWRoleOther("");
@@ -550,22 +553,22 @@ function ObraDetalleInner() {
       {/* WIP — avance de obra en términos financieros */}
       {wip && (
         <section className="bg-panel border border-line rounded-tag shadow-card p-5">
-          <h2 className="font-display font-bold text-sm mb-1">WIP (avance devengado)</h2>
-          <p className="text-[11px] text-steel font-mono mb-4">
-            Método costo-a-costo: % avance = costo incurrido / presupuesto. Convertido a {refCurrency}.
+          <h2 className="font-display font-bold text-sm mb-1">Avance de la obra</h2>
+          <p className="text-xs text-steel mb-4">
+            Según cuánto se gastó hasta ahora contra el presupuesto. Todo convertido a {refCurrency}.
           </p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <WipStat label="% avance" value={`${Math.round(wip.pct_complete * 100)}%`} />
-            <WipStat label="Devengado" value={formatMoney(wip.earned_revenue, refCurrency)} />
+            <WipStat label="Valor del avance" value={formatMoney(wip.earned_revenue, refCurrency)} />
             <WipStat label="Facturado" value={formatMoney(invoicedRef, refCurrency)} />
             <WipStat
-              label={wip.over_under_billing >= 0 ? "Sobre-facturado" : "Sub-facturado"}
+              label={wip.over_under_billing >= 0 ? "Facturado de más" : "Falta facturar"}
               value={formatMoney(Math.abs(wip.over_under_billing), refCurrency)}
               tone={wip.over_under_billing >= 0 ? "info" : "warn"}
             />
           </div>
           <div className="mt-3 pt-3 border-t border-line">
-            <p className={`text-sm font-medium ${wip.estimated_result >= 0 ? "text-ok" : "text-warn"}`}>
+            <p className={`text-base font-medium ${wip.estimated_result >= 0 ? "text-ok" : "text-warn"}`}>
               Resultado estimado: {wip.estimated_result >= 0 ? "ganancia" : "pérdida"} de {formatMoney(Math.abs(wip.estimated_result), refCurrency)}
             </p>
           </div>
@@ -581,7 +584,7 @@ function ObraDetalleInner() {
             {job.budget_currency !== refCurrency && <> · ≈ {formatMoney(budgetRef, refCurrency)}</>}
           </span>
         </div>
-        <p className="text-[11px] text-steel font-mono mb-3">Todo lo demás en esta ficha se muestra convertido a {refCurrency}, tu moneda de referencia (configurable en Ajustes).</p>
+        <p className="text-xs text-steel mb-3">Todos los montos de esta página se muestran en {refCurrency} (se puede cambiar en Ajustes), aunque los hayas cargado en otra moneda.</p>
 
         <div className="grid grid-cols-2 gap-4 mb-4">
           <div>
@@ -821,7 +824,7 @@ function ObraDetalleInner() {
         )}
         <div className="space-y-1">
           {invoices.map((inv) => (
-            <div key={inv.id} className="flex justify-between text-xs text-steel border-b border-line pb-1">
+            <div key={inv.id} className="flex justify-between items-center text-xs text-steel border-b border-line pb-1.5">
               <span>
                 {inv.invoiced_at} {inv.note && `· ${inv.note}`}
                 {inv.invoice_photo_url && (
@@ -830,7 +833,7 @@ function ObraDetalleInner() {
                   </button>
                 )}
               </span>
-              <span className="serial">{formatMoney(Number(inv.amount), inv.currency)}</span>
+              <span className="serial text-sm font-medium text-ink">{formatMoney(Number(inv.amount), inv.currency)}</span>
             </div>
           ))}
           {invoices.length === 0 && <p className="text-sm text-steel">Sin facturas registradas todavía.</p>}
@@ -876,9 +879,9 @@ function ObraDetalleInner() {
         )}
         <div className="space-y-1">
           {payments.map((p) => (
-            <div key={p.id} className="flex justify-between text-xs text-steel border-b border-line pb-1">
+            <div key={p.id} className="flex justify-between items-center text-xs text-steel border-b border-line pb-1.5">
               <span>{p.paid_at} {p.note && `· ${p.note}`}</span>
-              <span className="serial">
+              <span className="serial text-sm font-medium text-ink">
                 {formatMoney(Number(p.amount), p.currency)}
                 {p.currency !== refCurrency && <> (≈ {formatMoney(toReference(Number(p.amount), Number(p.fx_rate)), refCurrency)})</>}
               </span>
@@ -1110,6 +1113,7 @@ function ObraDetalleInner() {
           </form>
         )}
         <FormError message={workerError} />
+        {workerSuccess && <p className="text-xs text-ok mt-1">{workerSuccess}</p>}
 
         <div className="space-y-2">
           {workers.map((w) => (
@@ -1210,8 +1214,8 @@ function InfoBlock({ label, children }: { label: string; children: React.ReactNo
 function WipStat({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
     <div className="bg-base rounded-tag px-3 py-2">
-      <p className={`font-display font-bold text-sm ${tone ? `text-${tone}` : "text-ink"}`}>{value}</p>
-      <p className="text-[11px] text-steel mt-0.5">{label}</p>
+      <p className={`font-display font-bold text-base ${tone ? `text-${tone}` : "text-ink"}`}>{value}</p>
+      <p className="text-xs text-steel mt-0.5">{label}</p>
     </div>
   );
 }

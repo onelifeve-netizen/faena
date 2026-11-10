@@ -74,10 +74,10 @@ export default function Ajustes() {
       </header>
 
       <section className="bg-panel border border-line rounded-tag shadow-card p-5">
-        <h2 className="font-display font-bold text-sm mb-1">Moneda de referencia</h2>
+        <h2 className="font-display font-bold text-sm mb-1">¿En qué moneda ver los totales?</h2>
         <p className="text-xs text-steel mb-4">
-          Todos los presupuestos, gastos y pagos —sin importar en qué moneda se pactaron— se
-          convierten a esta moneda para poder comparar todo en un mismo valor.
+          Elegí una sola moneda. Aunque cargues gastos o pagos en pesos, dólares, etc., todos los
+          totales de la app se muestran convertidos a esta, para que todo se pueda sumar y comparar.
         </p>
         {loading ? (
           <p className="text-sm text-steel">Cargando...</p>
