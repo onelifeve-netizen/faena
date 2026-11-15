@@ -162,6 +162,36 @@ export interface ParseResult {
   rows: ParsedRow[];
   columnMap: { header: string; field: string }[];
   unmatchedHeaders: string[];
+  headerRowSkipped: number;
+}
+
+// Muchas planillas reales tienen un título y/o filas en blanco antes de la
+// fila de encabezados de verdad (ej: "INVENTARIO" en la fila 1, encabezados
+// recién en la fila 5). En vez de asumir que los encabezados están siempre
+// en la primera fila, se escanean las primeras filas y se elige la que más
+// se parece a una fila de encabezados conocidos.
+function detectHeaderRow(matrix: unknown[][]): number {
+  let bestRow = 0;
+  let bestScore = -1;
+  const scanLimit = Math.min(matrix.length, 20);
+  for (let i = 0; i < scanLimit; i++) {
+    const row = matrix[i] ?? [];
+    let matchCount = 0;
+    let nonEmptyCount = 0;
+    for (const cell of row) {
+      const text = cell == null ? "" : String(cell).trim();
+      if (!text) continue;
+      nonEmptyCount++;
+      const best = allFieldMatches(normalize(text))[0];
+      if (best && best.score >= 0.55) matchCount++;
+    }
+    const score = matchCount * 1000 + nonEmptyCount;
+    if (matchCount > 0 && score > bestScore) {
+      bestScore = score;
+      bestRow = i;
+    }
+  }
+  return bestRow;
 }
 
 export async function parseExcelFile(file: File): Promise<ParseResult> {
@@ -169,8 +199,13 @@ export async function parseExcelFile(file: File): Promise<ParseResult> {
   const buffer = await file.arrayBuffer();
   const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
-  const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(sheet, { defval: "" });
-  if (rows.length === 0) return { rows: [], columnMap: [], unmatchedHeaders: [] };
+
+  const rawMatrix: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+  if (rawMatrix.length === 0) return { rows: [], columnMap: [], unmatchedHeaders: [], headerRowSkipped: 0 };
+  const headerRowIndex = detectHeaderRow(rawMatrix);
+
+  const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(sheet, { range: headerRowIndex, defval: "" });
+  if (rows.length === 0) return { rows: [], columnMap: [], unmatchedHeaders: [], headerRowSkipped: headerRowIndex };
 
   const allHeaders = Array.from(new Set(rows.flatMap((r) => Object.keys(r))));
   const columnMap = buildColumnMap(allHeaders);
@@ -238,10 +273,10 @@ export async function parseExcelFile(file: File): Promise<ParseResult> {
       notes,
       purchase_date: mapped.purchase_date ?? null,
       category: mapped.category ?? null,
-      rowNumber: i + 2,
+      rowNumber: headerRowIndex + i + 2,
       error: name ? null : "Falta la descripción/nombre",
     };
   });
 
-  return { rows: parsedRows, columnMap: columnMapList, unmatchedHeaders };
+  return { rows: parsedRows, columnMap: columnMapList, unmatchedHeaders, headerRowSkipped: headerRowIndex };
 }

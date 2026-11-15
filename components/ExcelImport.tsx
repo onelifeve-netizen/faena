@@ -13,6 +13,7 @@ export default function ExcelImport({ zones, onDone, onClose }: { zones: Locatio
   const [columnMap, setColumnMap] = useState<ColumnMapEntry[]>([]);
   const [unmatchedHeaders, setUnmatchedHeaders] = useState<string[]>([]);
   const [fileName, setFileName] = useState("");
+  const [headerRowSkipped, setHeaderRowSkipped] = useState(0);
   const [parsing, setParsing] = useState(false);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState("");
@@ -31,6 +32,7 @@ export default function ExcelImport({ zones, onDone, onClose }: { zones: Locatio
       setRows(parsed.rows);
       setColumnMap(parsed.columnMap);
       setUnmatchedHeaders(parsed.unmatchedHeaders);
+      setHeaderRowSkipped(parsed.headerRowSkipped);
     } catch {
       setError("No se pudo leer ese archivo. Fijate que sea un Excel (.xlsx) o una planilla de cálculo válida.");
     } finally {
@@ -131,6 +133,12 @@ export default function ExcelImport({ zones, onDone, onClose }: { zones: Locatio
             <>
               {/* Paso 2 */}
               <p className="text-sm font-semibold text-ink mt-5 mb-2">Paso 2 — Revisá cómo se entendió tu planilla</p>
+              {headerRowSkipped > 0 && (
+                <p className="text-xs text-steel mb-2">
+                  ℹ️ Encontramos los títulos de columna en la fila {headerRowSkipped + 1} de tu archivo — se ignoraron las
+                  filas de arriba (título, filas vacías, etc.).
+                </p>
+              )}
               <div className="bg-base rounded-tag p-3">
                 <p className="text-xs text-steel mb-2">Estas columnas de tu archivo se reconocieron así:</p>
                 <div className="flex flex-wrap gap-2">
