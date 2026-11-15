@@ -510,6 +510,16 @@ export default function Inventario() {
                       onChange={(e) => setZoneRenames((r) => ({ ...r, [z.id]: e.target.value }))}
                       onBlur={() => renameZone(z)}
                     />
+                    {z.coordinates && (
+                      <a
+                        href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(z.coordinates)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="focus-ring text-xs text-accent font-mono hover:underline shrink-0"
+                      >
+                        📍 mapa
+                      </a>
+                    )}
                     <button onClick={() => deleteZone(z)} className="focus-ring text-xs text-warn font-mono hover:underline shrink-0">
                       borrar
                     </button>

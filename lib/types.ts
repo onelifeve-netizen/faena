@@ -16,6 +16,7 @@ export interface Location {
   id: string;
   company_id: string;
   name: string;
+  coordinates: string | null;
   created_at: string;
 }
 

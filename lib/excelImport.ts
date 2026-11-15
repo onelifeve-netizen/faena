@@ -5,6 +5,7 @@ export interface ParsedRow {
   quantity: number;
   unit_price: number | null;
   location_name: string | null;
+  coordinates: string | null;
   notes: string | null;
   purchase_date: string | null;
   category: string | null;
@@ -12,7 +13,18 @@ export interface ParsedRow {
   error: string | null;
 }
 
-type Field = "name" | "item_type" | "serial" | "unit_price" | "location_name" | "notes" | "purchase_date" | "category" | "quantity" | "total_cost";
+type Field =
+  | "name"
+  | "item_type"
+  | "serial"
+  | "unit_price"
+  | "location_name"
+  | "coordinates"
+  | "notes"
+  | "purchase_date"
+  | "category"
+  | "quantity"
+  | "total_cost";
 
 // Sinónimos conocidos por campo. El primero de cada lista es el "nombre
 // canónico" del campo, usado también como referencia para el match difuso.
@@ -27,6 +39,11 @@ const SYNONYMS: Record<Field, string[]> = {
   unit_price: ["costo unidad", "costo unitario", "precio unitario", "costo por unidad", "precio", "costo"],
   total_cost: ["costo total", "costo inventario total", "valor total", "importe total"],
   location_name: ["ubicacion", "ubicacion temporal", "ubicacion principal", "zona", "almacen", "patio", "deposito", "lugar"],
+  // Coordenadas GPS de la ubicación fija — van primero en el orden de
+  // evaluación (antes que location_name) porque sin esto "COORDENADAS DE
+  // UBICACION FIJA" matchearía como una ubicación más por contener
+  // "ubicacion".
+  coordinates: ["coordenadas", "coordenadas de ubicacion fija", "coordenadas gps", "gps", "latitud longitud", "ubicacion gps"],
   notes: ["observacion", "observaciones", "nota", "notas", "comentario", "comentarios"],
   purchase_date: ["fecha", "fecha de compra", "fecha de ingreso"],
   category: ["categoria", "rubro", "familia"],
@@ -153,6 +170,7 @@ export const FIELD_LABELS: Record<Field, string> = {
   unit_price: "Costo unidad",
   total_cost: "Costo total",
   location_name: "Ubicación",
+  coordinates: "Coordenadas (de la zona)",
   notes: "Observación",
   purchase_date: "Fecha",
   category: "Categoría",
@@ -293,6 +311,7 @@ export async function parseExcelFile(file: File): Promise<ParseResult> {
       quantity,
       unit_price: unitPrice,
       location_name: mapped.location_name ?? null,
+      coordinates: mapped.coordinates?.trim() || null,
       notes,
       purchase_date: mapped.purchase_date ?? null,
       category: mapped.category ?? null,

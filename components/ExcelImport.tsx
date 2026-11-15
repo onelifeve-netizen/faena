@@ -48,12 +48,31 @@ export default function ExcelImport({ zones, onDone, onClose }: { zones: Locatio
     try {
       // Resolver/crear zonas para los nombres de ubicación nuevos.
       const zoneByName = new Map(zones.map((z) => [z.name.trim().toLowerCase(), z.id]));
+      const zoneHasCoords = new Set(zones.filter((z) => z.coordinates).map((z) => z.name.trim().toLowerCase()));
+      // Coordenadas GPS de la zona (si la planilla las trae) — la primera que aparezca para cada nombre de zona.
+      const coordsByZoneName = new Map<string, string>();
+      for (const r of valid) {
+        const zoneName = r.location_name?.trim().toLowerCase();
+        if (zoneName && r.coordinates && !coordsByZoneName.has(zoneName)) coordsByZoneName.set(zoneName, r.coordinates);
+      }
+
       const neededNames = Array.from(
         new Set(valid.map((r) => r.location_name?.trim()).filter((n): n is string => !!n && !zoneByName.has(n.toLowerCase())))
       );
       for (const name of neededNames) {
-        const { data } = await supabase.from("locations").insert({ name }).select().single();
+        const { data } = await supabase
+          .from("locations")
+          .insert({ name, coordinates: coordsByZoneName.get(name.toLowerCase()) ?? null })
+          .select()
+          .single();
         if (data) zoneByName.set(name.toLowerCase(), data.id);
+      }
+
+      // Zonas que ya existían pero todavía no tenían coordenadas cargadas.
+      for (const [zoneNameLower, coords] of coordsByZoneName) {
+        if (zoneHasCoords.has(zoneNameLower)) continue;
+        const zoneId = zoneByName.get(zoneNameLower);
+        if (zoneId) await supabase.from("locations").update({ coordinates: coords }).eq("id", zoneId);
       }
 
       const toInsert = valid.flatMap((r) =>
@@ -166,24 +185,28 @@ export default function ExcelImport({ zones, onDone, onClose }: { zones: Locatio
                 {errorCount > 0 && <span className="text-warn"> · {errorCount} fila(s) con problema, no se van a cargar</span>}
               </p>
               <div className="max-h-64 overflow-y-auto overflow-x-auto border border-line rounded-tag">
-                <table className="w-full min-w-[480px] text-sm">
+                <table className="w-full min-w-[640px] text-sm">
                   <thead className="bg-base sticky top-0">
                     <tr>
                       <th className="text-left px-3 py-2">Fila</th>
                       <th className="text-left px-3 py-2">Nombre</th>
                       <th className="text-left px-3 py-2">Tipo</th>
                       <th className="text-left px-3 py-2">Cant.</th>
+                      <th className="text-right px-3 py-2">Costo unidad</th>
+                      <th className="text-right px-3 py-2">Costo total</th>
                       <th className="text-left px-3 py-2">Ubicación</th>
                       <th className="text-left px-3 py-2">Estado</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.slice(0, 50).map((r) => (
+                    {rows.map((r) => (
                       <tr key={r.rowNumber} className="border-t border-line">
                         <td className="px-3 py-2 text-steel">{r.rowNumber}</td>
                         <td className="px-3 py-2">{r.name || "—"}</td>
                         <td className="px-3 py-2">{r.item_type || "—"}</td>
                         <td className="px-3 py-2">{r.quantity}</td>
+                        <td className="px-3 py-2 text-right">{r.unit_price != null ? r.unit_price.toLocaleString("es-AR") : "—"}</td>
+                        <td className="px-3 py-2 text-right">{r.unit_price != null ? (r.unit_price * r.quantity).toLocaleString("es-AR") : "—"}</td>
                         <td className="px-3 py-2">{r.location_name || "—"}</td>
                         <td className="px-3 py-2">
                           {r.error ? <span className="text-warn">⚠ {r.error}</span> : <span className="text-ok">✓ ok</span>}
