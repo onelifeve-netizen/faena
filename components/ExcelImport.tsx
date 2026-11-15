@@ -12,6 +12,7 @@ export default function ExcelImport({ zones, onDone, onClose }: { zones: Locatio
   const [rows, setRows] = useState<ParsedRow[]>([]);
   const [columnMap, setColumnMap] = useState<ColumnMapEntry[]>([]);
   const [unmatchedHeaders, setUnmatchedHeaders] = useState<string[]>([]);
+  const [fileName, setFileName] = useState("");
   const [parsing, setParsing] = useState(false);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState("");
@@ -23,6 +24,7 @@ export default function ExcelImport({ zones, onDone, onClose }: { zones: Locatio
     if (!file) return;
     setError("");
     setDone(null);
+    setFileName(file.name);
     setParsing(true);
     try {
       const parsed = await parseExcelFile(file);
@@ -30,7 +32,7 @@ export default function ExcelImport({ zones, onDone, onClose }: { zones: Locatio
       setColumnMap(parsed.columnMap);
       setUnmatchedHeaders(parsed.unmatchedHeaders);
     } catch {
-      setError("No se pudo leer el archivo. Confirmá que sea un .xlsx, .xls o .csv válido.");
+      setError("No se pudo leer ese archivo. Fijate que sea un Excel (.xlsx) o una planilla de cálculo válida.");
     } finally {
       setParsing(false);
     }
@@ -78,6 +80,7 @@ export default function ExcelImport({ zones, onDone, onClose }: { zones: Locatio
       setRows([]);
       setColumnMap([]);
       setUnmatchedHeaders([]);
+      setFileName("");
       onDone();
     } finally {
       setImporting(false);
@@ -88,80 +91,94 @@ export default function ExcelImport({ zones, onDone, onClose }: { zones: Locatio
   const errorCount = rows.length - validCount;
 
   return (
-    <div className="bg-panel border border-line rounded-tag shadow-card p-4 mb-6">
-      <div className="flex items-center justify-between mb-2">
-        <p className="text-xs text-steel uppercase tracking-wide font-mono">Importar desde Excel</p>
-        <button onClick={onClose} className="focus-ring text-xs text-steel font-mono">
-          cerrar
+    <div className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6">
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="font-display font-bold text-base text-ink">Importar inventario desde Excel</h2>
+        <button onClick={onClose} className="focus-ring text-sm text-steel hover:text-ink font-mono">
+          ✕ cerrar
         </button>
       </div>
-      <p className="text-xs text-steel mb-3">
-        Columnas reconocidas (no hace falta tenerlas todas): descripción, tipo, serial, cantidad, costo
-        unidad (o costo total), ubicación, observación, fecha. Las ubicaciones que no existan se crean
-        solas como zonas nuevas.
-      </p>
 
       {done !== null ? (
-        <p className="text-sm text-ok">✓ Se importaron {done} artículo(s).</p>
+        <div className="bg-ok/10 border border-ok/20 rounded-tag px-4 py-4 mt-3">
+          <p className="text-base font-medium text-ok">✓ ¡Listo! Se cargaron {done} artículo(s) al inventario.</p>
+          <button onClick={onClose} className="focus-ring text-sm text-accent font-mono hover:underline mt-2">
+            cerrar
+          </button>
+        </div>
       ) : (
         <>
-          <input
-            type="file"
-            accept=".xlsx,.xls,.csv"
-            onChange={handleFile}
-            className="focus-ring text-xs"
-            disabled={parsing || importing}
-          />
+          <p className="text-sm text-steel mt-1 mb-4">
+            No hace falta acomodar tu planilla. El sistema intenta reconocer sola las columnas aunque no se llamen
+            exactamente igual (ej: "Costo $/ Unidad" también funciona).
+          </p>
+
+          {/* Paso 1 */}
+          <p className="text-sm font-semibold text-ink mb-2">Paso 1 — Elegí el archivo</p>
+          <label
+            className={`focus-ring flex items-center justify-center gap-2 border-2 border-dashed rounded-tag py-4 cursor-pointer transition-colors ${
+              parsing ? "border-line bg-base" : "border-accent/40 hover:border-accent hover:bg-accent/5"
+            }`}
+          >
+            <span className="text-sm font-medium text-accent">
+              {parsing ? "Leyendo el archivo..." : fileName ? `📄 ${fileName} — elegir otro archivo` : "📂 Tocá acá para elegir tu planilla (.xlsx, .xls o .csv)"}
+            </span>
+            <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} className="hidden" disabled={parsing || importing} />
+          </label>
           <FormError message={error} />
 
-          {parsing && <p className="text-xs text-steel mt-2">Leyendo archivo...</p>}
-
           {columnMap.length > 0 && (
-            <div className="mt-3 bg-base rounded-tag p-2.5">
-              <p className="text-[10px] text-steel uppercase tracking-wide font-mono mb-1.5">Columnas detectadas</p>
-              <div className="flex flex-wrap gap-1.5">
-                {columnMap.map((c) => (
-                  <span key={c.header} className="text-[11px] bg-white border border-line rounded-tag px-2 py-0.5">
-                    "{c.header}" → <span className="text-accent">{c.field}</span>
-                  </span>
-                ))}
+            <>
+              {/* Paso 2 */}
+              <p className="text-sm font-semibold text-ink mt-5 mb-2">Paso 2 — Revisá cómo se entendió tu planilla</p>
+              <div className="bg-base rounded-tag p-3">
+                <p className="text-xs text-steel mb-2">Estas columnas de tu archivo se reconocieron así:</p>
+                <div className="flex flex-wrap gap-2">
+                  {columnMap.map((c) => (
+                    <span key={c.header} className="text-sm bg-white border border-line rounded-tag px-2.5 py-1">
+                      "{c.header}" → <span className="text-accent font-medium">{c.field}</span>
+                    </span>
+                  ))}
+                </div>
+                {unmatchedHeaders.length > 0 && (
+                  <p className="text-xs text-steel mt-3">
+                    No se usaron estas columnas de tu archivo, no hay problema, simplemente se ignoran:{" "}
+                    {unmatchedHeaders.map((h) => `"${h}"`).join(", ")}.
+                  </p>
+                )}
               </div>
-              {unmatchedHeaders.length > 0 && (
-                <p className="text-[11px] text-steel mt-1.5">
-                  Sin usar: {unmatchedHeaders.map((h) => `"${h}"`).join(", ")}
-                </p>
-              )}
-            </div>
+            </>
           )}
 
           {rows.length > 0 && (
-            <div className="mt-3">
-              <p className="text-xs text-steel mb-2">
-                {validCount} fila(s) lista(s) para importar
-                {errorCount > 0 && <span className="text-warn"> · {errorCount} con error (se omiten)</span>}
+            <div className="mt-5">
+              <p className="text-sm font-semibold text-ink mb-2">Paso 3 — Confirmá la importación</p>
+              <p className="text-sm text-steel mb-2">
+                <span className="text-ok font-medium">{validCount} artículo(s) listos</span> para cargar
+                {errorCount > 0 && <span className="text-warn"> · {errorCount} fila(s) con problema, no se van a cargar</span>}
               </p>
-              <div className="max-h-56 overflow-y-auto overflow-x-auto border border-line rounded-tag">
-                <table className="w-full min-w-[480px] text-xs">
+              <div className="max-h-64 overflow-y-auto overflow-x-auto border border-line rounded-tag">
+                <table className="w-full min-w-[480px] text-sm">
                   <thead className="bg-base sticky top-0">
                     <tr>
-                      <th className="text-left px-2 py-1">Fila</th>
-                      <th className="text-left px-2 py-1">Nombre</th>
-                      <th className="text-left px-2 py-1">Tipo</th>
-                      <th className="text-left px-2 py-1">Cant.</th>
-                      <th className="text-left px-2 py-1">Ubicación</th>
-                      <th className="text-left px-2 py-1">Estado</th>
+                      <th className="text-left px-3 py-2">Fila</th>
+                      <th className="text-left px-3 py-2">Nombre</th>
+                      <th className="text-left px-3 py-2">Tipo</th>
+                      <th className="text-left px-3 py-2">Cant.</th>
+                      <th className="text-left px-3 py-2">Ubicación</th>
+                      <th className="text-left px-3 py-2">Estado</th>
                     </tr>
                   </thead>
                   <tbody>
                     {rows.slice(0, 50).map((r) => (
                       <tr key={r.rowNumber} className="border-t border-line">
-                        <td className="px-2 py-1 text-steel">{r.rowNumber}</td>
-                        <td className="px-2 py-1">{r.name || "—"}</td>
-                        <td className="px-2 py-1">{r.item_type || "—"}</td>
-                        <td className="px-2 py-1">{r.quantity}</td>
-                        <td className="px-2 py-1">{r.location_name || "—"}</td>
-                        <td className="px-2 py-1">
-                          {r.error ? <span className="text-warn">{r.error}</span> : <span className="text-ok">ok</span>}
+                        <td className="px-3 py-2 text-steel">{r.rowNumber}</td>
+                        <td className="px-3 py-2">{r.name || "—"}</td>
+                        <td className="px-3 py-2">{r.item_type || "—"}</td>
+                        <td className="px-3 py-2">{r.quantity}</td>
+                        <td className="px-3 py-2">{r.location_name || "—"}</td>
+                        <td className="px-3 py-2">
+                          {r.error ? <span className="text-warn">⚠ {r.error}</span> : <span className="text-ok">✓ ok</span>}
                         </td>
                       </tr>
                     ))}
@@ -171,9 +188,9 @@ export default function ExcelImport({ zones, onDone, onClose }: { zones: Locatio
               <button
                 onClick={confirmImport}
                 disabled={importing || validCount === 0}
-                className="focus-ring mt-3 bg-ink text-white text-sm px-4 py-1.5 rounded-tag disabled:opacity-40"
+                className="focus-ring mt-4 w-full sm:w-auto bg-ink text-white text-base font-medium px-6 py-3 rounded-tag disabled:opacity-40 hover:bg-ink/90"
               >
-                {importing ? "Importando..." : `Confirmar importación (${validCount})`}
+                {importing ? "Importando, un momento..." : `✓ Confirmar e importar ${validCount} artículo(s)`}
               </button>
             </div>
           )}

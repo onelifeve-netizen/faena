@@ -17,7 +17,10 @@ type Field = "name" | "item_type" | "serial" | "unit_price" | "location_name" | 
 // Sinónimos conocidos por campo. El primero de cada lista es el "nombre
 // canónico" del campo, usado también como referencia para el match difuso.
 const SYNONYMS: Record<Field, string[]> = {
-  name: ["descripcion", "nombre", "articulo", "item", "equipo", "producto", "detalle"],
+  // "item"/"n" NO van acá a propósito: en la mayoría de las planillas reales
+  // esa columna es solo el número de fila, no el nombre del artículo — si se
+  // incluye, le roba el lugar a la columna real de descripción.
+  name: ["descripcion", "nombre", "articulo", "equipo", "producto", "detalle"],
   item_type: ["tipo", "tipo de articulo", "categoria de tipo", "clase"],
   serial: ["serial", "n de serie", "nro de serie", "numero de serie", "codigo", "n serie", "serie"],
   quantity: ["cantidad", "cant", "qty", "unidades", "stock"],
@@ -33,10 +36,27 @@ function normalize(h: string): string {
   return h
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
-    .replace(/[_\-.]/g, " ")
+    .replace(/[_\-.$()%/]/g, " ")
     .replace(/\s+/g, " ")
     .trim()
     .toLowerCase();
+}
+
+// Códigos de una sola letra que suelen usarse en planillas reales para el
+// tipo de artículo (ej: R = Repuesto). Si la columna Tipo trae esto en vez
+// de la palabra completa, se expande para que coincida con los tipos que
+// ya usa el sistema.
+const TYPE_ABBREVIATIONS: Record<string, string> = {
+  e: "equipo",
+  a: "accesorio",
+  r: "repuesto",
+  h: "herramienta",
+  c: "consumible",
+};
+
+function expandItemType(value: string): string {
+  const key = value.trim().toLowerCase();
+  return TYPE_ABBREVIATIONS[key] ?? value.trim();
 }
 
 function levenshtein(a: string, b: string): number {
@@ -63,14 +83,25 @@ function similarity(a: string, b: string): number {
 }
 
 function bestFieldMatch(header: string): { field: Field; score: number } | null {
-  let best: { field: Field; score: number } | null = null;
+  const matches = allFieldMatches(header);
+  return matches[0] ?? null;
+}
+
+// Devuelve TODOS los campos que coinciden razonablemente con un encabezado,
+// de mejor a peor — no solo el mejor. Hace falta para el caso en que una
+// columna empata o casi empata entre dos campos (ej: "costo" vs "costo
+// inventario total" para "COSTO INVENTARIO"): si el campo que ganó ya está
+// ocupado por otra columna, igual hay que poder usar el segundo mejor en
+// vez de descartar la columna entera.
+function allFieldMatches(header: string): { field: Field; score: number }[] {
+  const best: Partial<Record<Field, number>> = {};
   for (const field of Object.keys(SYNONYMS) as Field[]) {
     for (const syn of SYNONYMS[field]) {
       const score = similarity(header, syn);
-      if (!best || score > best.score) best = { field, score };
+      if (best[field] == null || score > best[field]!) best[field] = score;
     }
   }
-  return best;
+  return (Object.entries(best) as [Field, number][]).sort((a, b) => b[1] - a[1]).map(([field, score]) => ({ field, score }));
 }
 
 // Resuelve, para un conjunto de encabezados de columna, a qué campo
@@ -93,13 +124,16 @@ function buildColumnMap(headers: string[]): Record<string, Field> {
     }
   }
 
-  // 2) para lo que quedó sin mapear, la coincidencia más cercana por encima
-  //    de un umbral razonable, asignando primero los matches más fuertes.
+  // 2) para lo que quedó sin mapear, todas las coincidencias razonables de
+  //    cada columna (no solo la mejor), asignando primero los matches más
+  //    fuertes — así, si el campo ganador de una columna ya lo ocupó otra,
+  //    todavía puede caer en su segunda mejor opción en vez de perderse.
   const candidates: { raw: string; field: Field; score: number }[] = [];
   for (const { raw, norm } of normalizedHeaders) {
     if (map[raw]) continue;
-    const best = bestFieldMatch(norm);
-    if (best && best.score >= 0.55) candidates.push({ raw, field: best.field, score: best.score });
+    for (const m of allFieldMatches(norm)) {
+      if (m.score >= 0.55) candidates.push({ raw, field: m.field, score: m.score });
+    }
   }
   candidates.sort((a, b) => b.score - a.score);
   for (const c of candidates) {
@@ -140,8 +174,25 @@ export async function parseExcelFile(file: File): Promise<ParseResult> {
 
   const allHeaders = Array.from(new Set(rows.flatMap((r) => Object.keys(r))));
   const columnMap = buildColumnMap(allHeaders);
+
+  // Si la planilla trae dos columnas de ubicación (ej: "ubicación temporal"
+  // y "ubicación en almacén"), solo una puede ser la zona real — la otra se
+  // guarda como observación para no perder el dato en silencio.
+  let secondaryLocationHeader: string | null = null;
+  for (const h of allHeaders) {
+    if (columnMap[h]) continue;
+    const best = bestFieldMatch(normalize(h));
+    if (best && best.field === "location_name" && best.score >= 0.55) {
+      secondaryLocationHeader = h;
+      break;
+    }
+  }
+
   const columnMapList = Object.entries(columnMap).map(([header, field]) => ({ header, field: FIELD_LABELS[field] }));
-  const unmatchedHeaders = allHeaders.filter((h) => !columnMap[h]);
+  if (secondaryLocationHeader) {
+    columnMapList.push({ header: secondaryLocationHeader, field: "Observación (ubicación temporal)" });
+  }
+  const unmatchedHeaders = allHeaders.filter((h) => !columnMap[h] && h !== secondaryLocationHeader);
 
   const parsedRows = rows.map((row, i) => {
     const mapped: Partial<Record<Field, string>> = {};
@@ -167,15 +218,24 @@ export async function parseExcelFile(file: File): Promise<ParseResult> {
       if (!isNaN(total) && quantity > 0) unitPrice = total / quantity;
     }
 
+    let notes = mapped.notes?.trim() || null;
+    if (secondaryLocationHeader) {
+      const tempLocationValue = row[secondaryLocationHeader];
+      if (tempLocationValue !== "" && tempLocationValue != null) {
+        const tempLocationText = `Ubicación temporal: ${String(tempLocationValue).trim()}`;
+        notes = notes ? `${notes} · ${tempLocationText}` : tempLocationText;
+      }
+    }
+
     const name = mapped.name?.trim() || "";
     return {
       name,
-      item_type: mapped.item_type ?? null,
+      item_type: mapped.item_type ? expandItemType(mapped.item_type) : null,
       serial: mapped.serial ?? null,
       quantity,
       unit_price: unitPrice,
       location_name: mapped.location_name ?? null,
-      notes: mapped.notes ?? null,
+      notes,
       purchase_date: mapped.purchase_date ?? null,
       category: mapped.category ?? null,
       rowNumber: i + 2,
