@@ -200,11 +200,34 @@ export async function parseExcelFile(file: File): Promise<ParseResult> {
   const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
 
-  const rawMatrix: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+  const rawMatrix: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: false });
   if (rawMatrix.length === 0) return { rows: [], columnMap: [], unmatchedHeaders: [], headerRowSkipped: 0 };
   const headerRowIndex = detectHeaderRow(rawMatrix);
 
-  const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(sheet, { range: headerRowIndex, defval: "" });
+  // Se arman los objetos a mano, columna por columna según el texto real de
+  // la fila de encabezados detectada — no se delega en el "range" numérico
+  // de sheet_to_json, que con filas vacías arriba puede terminar generando
+  // claves genéricas ("__EMPTY") en vez de usar el texto real del encabezado.
+  //
+  // "range" como número es un índice ABSOLUTO contra toda la hoja, pero
+  // headerRowIndex está calculado relativo a donde arranca el rango real de
+  // la hoja (sheet["!ref"]) — si no se sabe eso, con filas vacías arriba
+  // termina leyendo la fila equivocada (devuelve el propio encabezado como
+  // si fuera un dato, o se corre de fila).
+  const sheetStartRow = XLSX.utils.decode_range(sheet["!ref"] || "A1:A1").s.r;
+  const headerCells = (rawMatrix[headerRowIndex] ?? []).map((h) => (h == null ? "" : String(h).trim()));
+  const dataMatrix: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", range: sheetStartRow + headerRowIndex + 1 });
+  const rows: Record<string, unknown>[] = [];
+  const rowOriginalIndex: number[] = [];
+  dataMatrix.forEach((r, idx) => {
+    if (!r.some((cell) => cell !== "" && cell != null)) return; // ignora filas totalmente vacías (sobran al final de muchas planillas)
+    const obj: Record<string, unknown> = {};
+    headerCells.forEach((h, i) => {
+      if (h) obj[h] = r[i] ?? "";
+    });
+    rows.push(obj);
+    rowOriginalIndex.push(idx);
+  });
   if (rows.length === 0) return { rows: [], columnMap: [], unmatchedHeaders: [], headerRowSkipped: headerRowIndex };
 
   const allHeaders = Array.from(new Set(rows.flatMap((r) => Object.keys(r))));
@@ -273,7 +296,7 @@ export async function parseExcelFile(file: File): Promise<ParseResult> {
       notes,
       purchase_date: mapped.purchase_date ?? null,
       category: mapped.category ?? null,
-      rowNumber: headerRowIndex + i + 2,
+      rowNumber: headerRowIndex + rowOriginalIndex[i] + 2,
       error: name ? null : "Falta la descripción/nombre",
     };
   });
