@@ -486,7 +486,7 @@ export default function Inventario() {
             </div>
           )}
 
-          <div className="bg-panel border border-line rounded-tag shadow-card p-4 mb-6 flex flex-wrap items-center gap-6">
+          <div className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6 flex flex-wrap items-center gap-8">
             <DonutChart
               segments={zones
                 .map((z) => ({
@@ -511,7 +511,7 @@ export default function Inventario() {
                 if (z) setLocationFilter(z.id);
               }}
             />
-            <div className="flex flex-wrap gap-3 flex-1">
+            <div className="flex flex-wrap gap-4 flex-1 sm:border-l sm:border-line sm:pl-8">
               <label className="text-xs text-steel">
                 Tipo
                 <select
@@ -693,13 +693,19 @@ export default function Inventario() {
           No hay artículos que coincidan con esos filtros.
         </p>
       ) : (
-        <div className="space-y-6">
-          {groupByZone(filteredMachines).map(([groupLabel, items]) => (
+        <div className="space-y-8">
+          {groupByZone(filteredMachines).map(([groupLabel, items]) => {
+            const groupValue = items.reduce((sum, m) => sum + (m.purchase_price != null ? toReference(m.purchase_price, m.purchase_price_fx_rate) * m.quantity : 0), 0);
+            return (
             <div key={groupLabel}>
-              <div className="flex items-center gap-2 mb-2">
-                <p className="text-[11px] text-steel uppercase tracking-wide font-mono">
-                  {groupLabel} ({items.length} línea{items.length === 1 ? "" : "s"} · {items.reduce((s, m) => s + m.quantity, 0)} unidad(es))
+              <div className="flex items-center justify-between gap-2 mb-3 pb-2 border-b border-line">
+                <p className="font-display font-semibold text-sm text-ink">
+                  {groupLabel}
+                  <span className="ml-2 text-xs text-steel font-normal font-mono">
+                    {items.length} línea{items.length === 1 ? "" : "s"} · {items.reduce((s, m) => s + m.quantity, 0)} unidad(es)
+                  </span>
                 </p>
+                {groupValue > 0 && <span className="text-sm font-medium text-ink shrink-0">{formatMoney(groupValue, refCurrency)}</span>}
               </div>
               <div className="space-y-2">
                 {items.map((m) => (
@@ -766,7 +772,8 @@ export default function Inventario() {
                 ))}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
