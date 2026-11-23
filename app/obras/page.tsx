@@ -71,6 +71,31 @@ export default function Obras() {
 
       <FormError message={error} />
 
+      {!loading && jobs.length > 0 && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <KpiCard label="Obras en curso" value={jobs.filter((j) => j.status === "en_curso").length.toString()} accent="accent" />
+          <KpiCard
+            label="Presupuesto (en curso)"
+            value={formatMoney(
+              jobs.filter((j) => j.status === "en_curso").reduce((s, j) => s + toReference(Number(j.budget), Number(j.budget_fx_rate)), 0),
+              refCurrency
+            )}
+            accent="gold"
+          />
+          <KpiCard
+            label="Cobrado (en curso)"
+            value={formatMoney(
+              wips
+                .filter((w) => jobs.find((j) => j.id === w.job_id)?.status === "en_curso")
+                .reduce((s, w) => s + Number(w.collected_amount), 0),
+              refCurrency
+            )}
+            accent="ok"
+          />
+          <KpiCard label="Saldo pendiente total" value={formatMoney(pending.reduce((s, p) => s + p.pendingRef, 0), refCurrency)} accent="warn" />
+        </div>
+      )}
+
       {!loading && pending.length > 0 && (
         <section className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6">
           <h2 className="font-display font-bold text-sm mb-1">Cobros pendientes</h2>
@@ -132,6 +157,15 @@ export default function Obras() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function KpiCard({ label, value, accent }: { label: string; value: string; accent: string }) {
+  return (
+    <div className="bg-panel border border-line rounded-tag shadow-card px-4 py-4">
+      <p className={`font-display font-bold text-2xl text-${accent}`}>{value}</p>
+      <p className="text-xs text-steel mt-1">{label}</p>
     </div>
   );
 }
