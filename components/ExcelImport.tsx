@@ -24,6 +24,7 @@ export default function ExcelImport({ zones, onDone, onClose }: { zones: Locatio
     notFound: number;
     ignored: number;
     totalValue: number;
+    zoneWarnings: string[];
   } | null>(null);
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -66,20 +67,23 @@ export default function ExcelImport({ zones, onDone, onClose }: { zones: Locatio
       const neededNames = Array.from(
         new Set(valid.map((r) => r.location_name?.trim()).filter((n): n is string => !!n && !zoneByName.has(n.toLowerCase())))
       );
-      for (const name of neededNames) {
-        const { data, error: zoneErr } = await supabase
+      const zoneWarnings: string[] = [];
+      if (neededNames.length > 0) {
+        const { data: createdZones, error: zoneErr } = await supabase
           .from("locations")
-          .insert({ name, coordinates: coordsByZoneName.get(name.toLowerCase()) ?? null })
-          .select()
-          .single();
-        if (data) {
-          zoneByName.set(name.toLowerCase(), data.id);
+          .upsert(
+            neededNames.map((name) => ({ name, coordinates: coordsByZoneName.get(name.toLowerCase()) ?? null })),
+            { onConflict: "company_id,name" }
+          )
+          .select();
+        if (zoneErr) {
+          zoneWarnings.push(`No se pudieron crear las zonas (${neededNames.join(", ")}): ${zoneErr.message}`);
         } else {
-          // Si falló (ej: ya existe con otra mayúscula/minúscula), la buscamos
-          // en vez de dejar el artículo sin zona en silencio.
-          const { data: existing } = await supabase.from("locations").select("id").ilike("name", name).maybeSingle();
-          if (existing) zoneByName.set(name.toLowerCase(), existing.id);
-          else if (zoneErr) setError(`No se pudo crear la zona "${name}": ${zoneErr.message}`);
+          for (const z of createdZones ?? []) {
+            zoneByName.set((z as { name: string }).name.trim().toLowerCase(), (z as { id: string }).id);
+          }
+          const missing = neededNames.filter((n) => !zoneByName.has(n.toLowerCase()));
+          if (missing.length > 0) zoneWarnings.push(`No se pudieron crear estas zonas: ${missing.join(", ")}`);
         }
       }
 
@@ -169,7 +173,7 @@ export default function ExcelImport({ zones, onDone, onClose }: { zones: Locatio
         "importación desde Excel",
         `${createdCount} creado(s), ${updatedCount} actualizado(s), ${notFoundCount} no encontrado(s) en este conteo`
       );
-      setDone({ created: createdCount, updated: updatedCount, notFound: notFoundCount, ignored: ignoredCount, totalValue });
+      setDone({ created: createdCount, updated: updatedCount, notFound: notFoundCount, ignored: ignoredCount, totalValue, zoneWarnings });
       setRows([]);
       setColumnMap([]);
       setUnmatchedHeaders([]);
@@ -206,6 +210,13 @@ export default function ExcelImport({ zones, onDone, onClose }: { zones: Locatio
           <p className="text-sm text-steel mt-1">
             Valor total del archivo: {fileCurrency} {done.totalValue.toLocaleString("es-AR")}
           </p>
+          {done.zoneWarnings.length > 0 && (
+            <div className="bg-warn/10 border border-warn/20 rounded-tag px-3 py-2 mt-2">
+              {done.zoneWarnings.map((w, i) => (
+                <p key={i} className="text-xs text-warn">⚠ {w}</p>
+              ))}
+            </div>
+          )}
           <button onClick={onClose} className="focus-ring text-sm text-accent font-mono hover:underline mt-2">
             cerrar
           </button>

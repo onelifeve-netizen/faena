@@ -107,7 +107,7 @@ export default function Dashboard() {
             <StatCard label="Equipos disponibles" value={disponibles} accent="ok" icon={IconBox} href="/inventario" emptyCta="+ agregar el primer equipo" />
             <StatCard label="Obras en curso" value={activas} accent="accent" icon={IconBuilding} href="/obras" emptyCta="+ crear la primera obra" />
             <StatCard label="Herramientas a reponer" value={aReponer} accent={aReponer > 0 ? "warn" : "ok"} icon={IconClipboard} href="/inventario" emptyCta="todo en buen estado" />
-            <StatCard label="Preventivos vencidos" value={vencidas.length} accent={vencidas.length > 0 ? "warn" : "ok"} icon={IconWrench} href="/mantenimiento" emptyCta="programar un mantenimiento" />
+            <StatCard label="Preventivos vencidos" value={vencidas.length} accent={vencidas.length > 0 ? "warn" : "ok"} icon={IconWrench} href="/inventario" emptyCta="programar un mantenimiento" />
           </motion.div>
 
           {jobsWithMissing.length > 0 && (
@@ -254,19 +254,19 @@ export default function Dashboard() {
             <motion.section variants={fadeUp}>
               <div className="flex items-center justify-between mb-3">
                 <h2 className="font-display font-bold text-lg">Preventivos próximos</h2>
-                <Link href="/mantenimiento" className="text-xs text-accent font-mono hover:underline">ver todo →</Link>
+                <Link href="/inventario" className="text-xs text-accent font-mono hover:underline">ver todo →</Link>
               </div>
               <div className="space-y-2">
                 {[...vencidas, ...proximas].slice(0, 5).map((s) => (
-                  <div key={s.id} className="asset-tag px-4 py-3">
+                  <Link key={s.id} href={`/inventario/detalle?id=${s.machine_id}`} className="asset-tag px-4 py-3 block hover:shadow-sm transition-shadow">
                     <div className="flex items-center justify-between">
                       <span className="font-medium text-sm">{s.machine?.name}</span>
                       <span className={`badge ${s.next_due_at < today ? "bg-warn/10 text-warn" : "bg-info/10 text-info"}`}>{s.next_due_at}</span>
                     </div>
                     <p className="text-xs text-steel mt-0.5">{s.name}</p>
-                  </div>
+                  </Link>
                 ))}
-                {vencidas.length === 0 && proximas.length === 0 && <EmptyHint text="Nada vencido ni próximo." href="/mantenimiento" cta="programar un mantenimiento" />}
+                {vencidas.length === 0 && proximas.length === 0 && <EmptyHint text="Nada vencido ni próximo." href="/inventario" cta="ver inventario" />}
               </div>
             </motion.section>
 
@@ -297,7 +297,7 @@ export default function Dashboard() {
           >
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-display font-bold text-lg">Calendario de mantenimiento</h2>
-              <Link href="/mantenimiento" className="text-xs text-accent font-mono hover:underline">ver todo →</Link>
+              <Link href="/inventario" className="text-xs text-accent font-mono hover:underline">ver todo →</Link>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <div>

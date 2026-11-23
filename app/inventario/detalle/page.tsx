@@ -75,6 +75,12 @@ function InventarioDetalleInner() {
   const [newCondition, setNewCondition] = useState<ToolCondition>("bueno");
   const [conditionNote, setConditionNote] = useState("");
   const [conditionError, setConditionError] = useState("");
+  const [showScheduleForm, setShowScheduleForm] = useState(false);
+  const [scheduleName, setScheduleName] = useState("");
+  const [scheduleReminderDays, setScheduleReminderDays] = useState("7");
+  const [scheduleFrequency, setScheduleFrequency] = useState("90");
+  const [scheduleError, setScheduleError] = useState("");
+  const [orderCreatedForSchedule, setOrderCreatedForSchedule] = useState<string | null>(null);
 
   async function load() {
     const [machRes, ordersRes, schedRes, depRes, specsRes, photosRes, compRes, zonesRes, jmRes, accRes, unlinkedRes, tnRes, condRes] = await Promise.all([
@@ -211,6 +217,87 @@ function InventarioDetalleInner() {
     const zoneName = zones.find((z) => z.id === zoneId)?.name ?? "sin zona";
     await logAudit("machine", id, "zona cambiada", `"${machine?.name}" → ${zoneName}`);
     load();
+  }
+
+  function addDays(dateStr: string, days: number) {
+    const d = new Date(dateStr);
+    d.setDate(d.getDate() + days);
+    return d.toISOString().slice(0, 10);
+  }
+
+  async function addSchedule(e: React.FormEvent) {
+    e.preventDefault();
+    if (!scheduleName.trim()) return;
+    const freq = Number(scheduleFrequency);
+    const today = new Date().toISOString().slice(0, 10);
+    let newId: string | null = null;
+    const ok = await runMutation(async () => {
+      const { data, error } = await supabase
+        .from("maintenance_schedules")
+        .insert({
+          machine_id: id,
+          name: scheduleName,
+          frequency_days: freq,
+          reminder_days_before: scheduleReminderDays ? Number(scheduleReminderDays) : 7,
+          next_due_at: addDays(today, freq),
+        })
+        .select()
+        .single();
+      newId = data?.id ?? null;
+      return { error };
+    }, setScheduleError);
+    if (!ok) return;
+    if (newId) await logAudit("maintenance_schedule", newId, "regla creada", `"${scheduleName}" cada ${freq} días para ${machine?.name}`);
+    setScheduleName("");
+    setScheduleReminderDays("7");
+    setScheduleFrequency("90");
+    setShowScheduleForm(false);
+    load();
+  }
+
+  async function markScheduleDone(s: MaintenanceSchedule) {
+    setScheduleError("");
+    const today = new Date().toISOString().slice(0, 10);
+    const ok = await runMutation(
+      () => supabase.from("maintenance_schedules").update({ last_done_at: today, next_due_at: addDays(today, s.frequency_days) }).eq("id", s.id),
+      setScheduleError
+    );
+    if (!ok) return;
+    await logAudit("maintenance_schedule", s.id, "mantenimiento realizado", `"${s.name}" (${machine?.name}) — próximo: ${addDays(today, s.frequency_days)}`);
+    load();
+  }
+
+  async function toggleScheduleActive(s: MaintenanceSchedule) {
+    setScheduleError("");
+    const ok = await runMutation(() => supabase.from("maintenance_schedules").update({ active: !s.active }).eq("id", s.id), setScheduleError);
+    if (!ok) return;
+    load();
+  }
+
+  async function crearOrdenFromSchedule(s: MaintenanceSchedule, overdue: boolean) {
+    setScheduleError("");
+    let newId: string | null = null;
+    const ok = await runMutation(async () => {
+      const { data, error } = await supabase
+        .from("work_orders")
+        .insert({
+          machine_id: s.machine_id,
+          type: "preventivo",
+          title: s.name,
+          description: `Generada desde la regla de mantenimiento "${s.name}" (cada ${s.frequency_days} días).`,
+          priority: overdue ? "alta" : "media",
+        })
+        .select()
+        .single();
+      newId = data?.id ?? null;
+      return { error };
+    }, setScheduleError);
+    if (!ok) return;
+    if (newId) {
+      await logAudit("work_order", newId, "orden creada", `"${s.name}" (preventivo) para ${machine?.name} — desde Mantenimiento`);
+      setOrderCreatedForSchedule(s.id);
+      load();
+    }
   }
 
   async function deleteMachine() {
@@ -877,22 +964,97 @@ function InventarioDetalleInner() {
         </section>
       )}
 
-      {/* Mantenimiento preventivo programado */}
-      <section className="bg-panel border border-line rounded-tag shadow-card p-5">
-        <h2 className="font-display font-bold text-sm mb-3">Mantenimiento preventivo</h2>
-        {schedules.length === 0 ? (
-          <p className="text-sm text-steel">Sin reglas programadas para este equipo.</p>
-        ) : (
-          <div className="space-y-2">
-            {schedules.map((s) => (
-              <div key={s.id} className="flex justify-between text-sm border-b border-line pb-1">
-                <span>{s.name} · cada {s.frequency_days} días</span>
-                <span className="serial">próximo: {s.next_due_at}</span>
-              </div>
-            ))}
+      {/* Mantenimiento preventivo programado — solo para equipos grandes */}
+      {machine.item_type === "equipo" && (
+        <section className="bg-panel border border-line rounded-tag shadow-card p-5">
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="font-display font-bold text-sm">Mantenimiento preventivo</h2>
+            {canWrite(role) && (
+              <button onClick={() => setShowScheduleForm((s) => !s)} className="focus-ring text-xs text-accent font-mono hover:underline">
+                {showScheduleForm ? "cancelar" : "+ nueva regla"}
+              </button>
+            )}
           </div>
-        )}
-      </section>
+          <p className="text-xs text-steel mb-3">Definí la regla ("cada X días hacer tal cosa"). Cuando llegue el momento, generá la orden de trabajo acá mismo.</p>
+
+          {showScheduleForm && (
+            <form onSubmit={addSchedule} className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+              <input
+                className="focus-ring sm:col-span-2 border border-line rounded-tag px-3 py-1.5 text-sm"
+                placeholder="Ej: cambio de aceite"
+                value={scheduleName}
+                onChange={(e) => setScheduleName(e.target.value)}
+                required
+              />
+              <label className="block text-xs text-steel">
+                Avisar con cuántos días de anticipación
+                <input
+                  className="focus-ring mt-1 w-full border border-line rounded-tag px-3 py-1.5 text-sm"
+                  placeholder="Ej: 7"
+                  type="number"
+                  value={scheduleReminderDays}
+                  onChange={(e) => setScheduleReminderDays(e.target.value)}
+                  required
+                />
+              </label>
+              <label className="block text-xs text-steel">
+                Cada cuántos días se repite
+                <input
+                  className="focus-ring mt-1 w-full border border-line rounded-tag px-3 py-1.5 text-sm"
+                  placeholder="Ej: 90"
+                  type="number"
+                  value={scheduleFrequency}
+                  onChange={(e) => setScheduleFrequency(e.target.value)}
+                  required
+                />
+              </label>
+              <button type="submit" className="focus-ring sm:col-span-2 bg-ink text-white text-sm py-1.5 rounded-tag">
+                Guardar regla
+              </button>
+            </form>
+          )}
+          <FormError message={scheduleError} />
+
+          {schedules.length === 0 ? (
+            <p className="text-sm text-steel">Sin reglas programadas para este equipo.</p>
+          ) : (
+            <div className="space-y-2">
+              {schedules.map((s) => {
+                const today = new Date().toISOString().slice(0, 10);
+                const overdue = s.next_due_at < today;
+                const soon = !overdue && s.next_due_at <= addDays(today, s.reminder_days_before);
+                return (
+                  <div key={s.id} className={`flex flex-wrap items-center justify-between gap-2 text-sm border-b border-line pb-2 ${!s.active ? "opacity-50" : ""}`}>
+                    <div>
+                      <span>{s.name} · cada {s.frequency_days} días</span>
+                      <span className={`badge ml-2 ${overdue ? "bg-warn/10 text-warn" : soon ? "bg-info/10 text-info" : "bg-ok/10 text-ok"}`}>
+                        {overdue ? "vencido" : soon ? "próximo" : "al día"} · {s.next_due_at}
+                      </span>
+                    </div>
+                    {canWrite(role) && (
+                      <div className="flex items-center gap-2 text-xs">
+                        {orderCreatedForSchedule === s.id ? (
+                          <span className="text-ok">✓ orden creada</span>
+                        ) : (
+                          <button onClick={() => crearOrdenFromSchedule(s, overdue)} className="focus-ring text-accent font-mono hover:underline">
+                            crear orden
+                          </button>
+                        )}
+                        <button onClick={() => markScheduleDone(s)} className="focus-ring text-accent font-mono hover:underline">
+                          hecho hoy
+                        </button>
+                        <button onClick={() => toggleScheduleActive(s)} className="focus-ring text-steel font-mono hover:underline">
+                          {s.active ? "pausar" : "reactivar"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Órdenes de trabajo del equipo */}
       <section className="bg-panel border border-line rounded-tag shadow-card p-5">

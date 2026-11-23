@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { Machine, MachineStatus, Location, ToolCondition } from "@/lib/types";
+import { Machine, MachineStatus, Location, ToolCondition, MaintenanceSchedule } from "@/lib/types";
 import { DEFAULT_ITEM_TYPES, itemTypeLabel, CONDITION_LABELS, CONDITION_STYLES } from "@/lib/itemTypes";
 import ItemTypeGlossary from "@/components/ItemTypeGlossary";
 import StatusBadge from "@/components/StatusBadge";
@@ -66,18 +66,26 @@ export default function Inventario() {
   const [listError, setListError] = useState("");
   const [showDeleteAll, setShowDeleteAll] = useState(false);
   const [deleteAllConfirmText, setDeleteAllConfirmText] = useState("");
+  const [upcomingMaintenance, setUpcomingMaintenance] = useState<MaintenanceSchedule[]>([]);
 
   async function load() {
-    const [machRes, zonesRes, jmRes, condRes, photosRes] = await Promise.all([
+    const [machRes, zonesRes, jmRes, condRes, photosRes, schedRes] = await Promise.all([
       supabase.from("machines").select("*, location_obj:locations(*)").order("created_at", { ascending: false }),
       supabase.from("locations").select("*").order("name"),
       supabase.from("job_machines").select("machine_id, job:jobs(id, name)").is("returned_at", null),
       supabase.from("tool_condition_logs").select("machine_id, condition, created_at").order("created_at", { ascending: false }),
       supabase.from("machine_photos").select("machine_id, photo_url").order("created_at", { ascending: false }),
+      supabase.from("maintenance_schedules").select("*, machine:machines(*)").eq("active", true).order("next_due_at", { ascending: true }),
     ]);
     if (machRes.error) setListError("No se pudo cargar el inventario. Revisá tu conexión y recargá la página.");
     setMachines((machRes.data as unknown as Machine[]) ?? []);
     setZones((zonesRes.data as Location[]) ?? []);
+    const today = new Date().toISOString().slice(0, 10);
+    const in7Days = new Date();
+    in7Days.setDate(in7Days.getDate() + 7);
+    setUpcomingMaintenance(
+      ((schedRes.data as MaintenanceSchedule[]) ?? []).filter((s) => s.next_due_at <= in7Days.toISOString().slice(0, 10)).sort((a, b) => a.next_due_at.localeCompare(b.next_due_at))
+    );
     const jobMap: Record<string, { id: string; name: string }> = {};
     (jmRes.data ?? []).forEach((r: any) => {
       if (r.job) jobMap[r.machine_id] = r.job;
@@ -454,6 +462,28 @@ export default function Inventario() {
           {Object.values(conditionByMachine).filter((c) => c === "reponer").length > 0 && (
             <div className="bg-warn/10 border border-warn/20 rounded-tag px-4 py-2.5 mb-4 text-xs text-warn">
               ⚠ {Object.values(conditionByMachine).filter((c) => c === "reponer").length} herramienta(s) marcadas como "necesita reposición" — revisalas abajo.
+            </div>
+          )}
+
+          {upcomingMaintenance.length > 0 && (
+            <div className="bg-panel border border-line rounded-tag shadow-card p-4 mb-6">
+              <p className="text-xs text-steel uppercase tracking-wide font-mono mb-2">🔧 Mantenimientos próximos (equipos)</p>
+              <div className="space-y-1.5">
+                {upcomingMaintenance.slice(0, 5).map((s) => {
+                  const today = new Date().toISOString().slice(0, 10);
+                  const overdue = s.next_due_at < today;
+                  return (
+                    <Link
+                      key={s.id}
+                      href={`/inventario/detalle?id=${s.machine_id}`}
+                      className="focus-ring flex items-center justify-between text-sm hover:underline"
+                    >
+                      <span className="text-ink">{s.machine?.name} <span className="text-steel">— {s.name}</span></span>
+                      <span className={`badge ${overdue ? "bg-warn/10 text-warn" : "bg-info/10 text-info"}`}>{overdue ? "vencido" : "próximo"} · {s.next_due_at}</span>
+                    </Link>
+                  );
+                })}
+              </div>
             </div>
           )}
 
