@@ -658,7 +658,9 @@ function InventarioDetalleInner() {
         <FormError message={specError} />
       </section>
 
-      {/* Accesorios */}
+      {/* Accesorios — solo tiene sentido para equipos grandes, no para
+          accesorios/repuestos/consumibles mismos */}
+      {machine.item_type === "equipo" && (
       <section className="bg-panel border border-line rounded-tag shadow-card p-5">
         <div className="flex items-center justify-between mb-1">
           <h2 className="font-display font-bold text-sm">Accesorios</h2>
@@ -732,6 +734,7 @@ function InventarioDetalleInner() {
         <FormError message={accessoryError} />
         {accessorySuccess && <p className="text-xs text-ok mt-1">{accessorySuccess}</p>}
       </section>
+      )}
 
       {/* Estado y desgaste */}
       <section className="bg-panel border border-line rounded-tag shadow-card p-5">
