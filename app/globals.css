@@ -55,8 +55,8 @@ a.asset-tag:hover, button.asset-tag:hover {
 
 .serial {
   font-family: var(--font-mono);
-  font-size: 12px;
-  color: #5B6178;
+  font-size: 13px;
+  color: #454B63;
 }
 
 .focus-ring:focus-visible {

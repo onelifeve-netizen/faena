@@ -621,8 +621,11 @@ function ObraDetalleInner() {
           </span>
         </div>
         {canWrite(role) && (
-          <button onClick={() => setShowBudgetModal(true)} className="focus-ring text-xs text-accent font-mono hover:underline mb-2 block">
-            {budgetItems.length === 0 ? "+ crear presupuesto →" : `ver detalle (${budgetItems.length} ítem${budgetItems.length === 1 ? "" : "s"}) / editar →`}
+          <button
+            onClick={() => setShowBudgetModal(true)}
+            className="focus-ring bg-ink text-white text-sm font-medium px-4 py-2 rounded-tag mb-3 hover:bg-ink/90"
+          >
+            {budgetItems.length === 0 ? "+ Crear presupuesto" : `Ver / editar presupuesto (${budgetItems.length} ítem${budgetItems.length === 1 ? "" : "s"})`}
           </button>
         )}
         <p className="text-xs text-steel mb-3">Todos los montos de esta página se muestran en {refCurrency} (se puede cambiar en Ajustes), aunque los hayas cargado en otra moneda.</p>

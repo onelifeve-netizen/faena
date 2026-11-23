@@ -14,7 +14,7 @@ export function friendlyError(error: SupabaseError | null | undefined): string {
   if (/JWT|session|not authenticated|refresh_token/i.test(msg)) return "Tu sesión expiró. Volvé a iniciar sesión.";
   if (/row-level security|permission denied|RLS/i.test(msg)) return "No tenés permiso para hacer esto con tu rol actual.";
   if (/Failed to fetch|NetworkError|network|timeout/i.test(msg)) return "No se pudo conectar. Revisá tu conexión e intentá de nuevo.";
-  if (msg) return msg;
+  if (msg) console.error("Error sin traducir:", msg);
   return "Ocurrió un error y no se guardó. Intentá de nuevo.";
 }
 
