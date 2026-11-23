@@ -9,6 +9,7 @@ import StatusBadge from "@/components/StatusBadge";
 import FormError from "@/components/FormError";
 import { runMutation } from "@/lib/errors";
 import { useMyRole, canWrite } from "@/lib/roles";
+import Avatar from "@/components/Avatar";
 
 export default function Contactos() {
   return (
@@ -145,10 +146,16 @@ function ContactosInner() {
             <div key={c.id} id={`contact-${c.id}`} className="border border-line rounded-tag shadow-card overflow-hidden bg-panel">
               <button
                 onClick={() => toggleOpen(c.id)}
-                className="focus-ring w-full flex items-center justify-between px-4 py-3 text-left hover:bg-base transition-colors"
+                className="focus-ring w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-base transition-colors"
               >
-                <span className="text-sm font-medium text-ink">{c.name}</span>
-                <span className="text-xs text-steel">{c.role || "sin rol"}</span>
+                <span className="flex items-center gap-3 min-w-0">
+                  <Avatar name={c.name} size={36} />
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium text-ink truncate">{c.name}</span>
+                    <span className="block text-xs text-steel">{c.role || "sin rol"}</span>
+                  </span>
+                </span>
+                {c.phone && <span className="serial text-xs shrink-0">{c.phone}</span>}
               </button>
               {openId === c.id && (
                 <div className="px-4 py-3 border-t border-line bg-base text-xs text-steel space-y-2">
