@@ -1,13 +1,16 @@
 export interface ParsedRow {
   name: string;
   item_type: string | null;
+  item_code: string | null;
   serial: string | null;
   quantity: number;
   unit_price: number | null;
   location_name: string | null;
+  temporary_location: string | null;
   coordinates: string | null;
   notes: string | null;
   purchase_date: string | null;
+  inventory_date: string | null;
   category: string | null;
   rowNumber: number;
   error: string | null;
@@ -16,12 +19,15 @@ export interface ParsedRow {
 type Field =
   | "name"
   | "item_type"
+  | "item_code"
   | "serial"
   | "unit_price"
   | "location_name"
+  | "temporary_location"
   | "coordinates"
   | "notes"
   | "purchase_date"
+  | "inventory_date"
   | "category"
   | "quantity"
   | "total_cost";
@@ -34,18 +40,33 @@ const SYNONYMS: Record<Field, string[]> = {
   // incluye, le roba el lugar a la columna real de descripción.
   name: ["descripcion", "nombre", "articulo", "equipo", "producto", "detalle"],
   item_type: ["tipo", "tipo de articulo", "categoria de tipo", "clase"],
-  serial: ["serial", "n de serie", "nro de serie", "numero de serie", "codigo", "n serie", "serie"],
+  // El código/número de ITEM de la planilla (clave de upsert para no
+  // duplicar en reimportaciones). "item" va acá, no en "name" ni en
+  // "serial" — es un número de identificación, no una descripción ni un
+  // número de serie de fábrica.
+  item_code: ["item", "codigo de identificacion", "codigo item", "nro item", "numero de item", "n item"],
+  serial: ["serial", "n de serie", "nro de serie", "numero de serie", "n serie", "serie"],
   quantity: ["cantidad", "cant", "qty", "unidades", "stock"],
   unit_price: ["costo unidad", "costo unitario", "precio unitario", "costo por unidad", "precio", "costo"],
   total_cost: ["costo total", "costo inventario total", "valor total", "importe total"],
-  location_name: ["ubicacion", "ubicacion temporal", "ubicacion principal", "zona", "almacen", "patio", "deposito", "lugar"],
+  // La zona/ubicación fija (dónde vive el artículo normalmente). Ojo: NO
+  // incluye "ubicacion temporal" — eso es un campo distinto (ver abajo),
+  // porque en archivos reales son dos columnas separadas con significados
+  // opuestos (zona fija vs. dónde está ahora).
+  location_name: ["ubicacion en almacen", "ubicacion en almacen patio", "ubicacion principal", "zona", "almacen", "patio", "deposito", "ubicacion"],
+  // "Dónde está ahora" — puede ser un vehículo, una obra, otro contenedor,
+  // etc. — distinto de la zona fija de almacenamiento.
+  temporary_location: ["ubicacion temporal", "ubicacion actual", "ubicacion provisoria", "donde esta"],
   // Coordenadas GPS de la ubicación fija — van primero en el orden de
   // evaluación (antes que location_name) porque sin esto "COORDENADAS DE
   // UBICACION FIJA" matchearía como una ubicación más por contener
   // "ubicacion".
   coordinates: ["coordenadas", "coordenadas de ubicacion fija", "coordenadas gps", "gps", "latitud longitud", "ubicacion gps"],
   notes: ["observacion", "observaciones", "nota", "notas", "comentario", "comentarios"],
-  purchase_date: ["fecha", "fecha de compra", "fecha de ingreso"],
+  purchase_date: ["fecha de compra", "fecha de ingreso", "fecha de adquisicion"],
+  // FECHA sola (sin "de compra") es la fecha del conteo/inventario, no de
+  // compra — son cosas distintas en la realidad (ver spec del usuario).
+  inventory_date: ["fecha", "fecha de conteo", "fecha de inventario", "fecha de relevamiento"],
   category: ["categoria", "rubro", "familia"],
 };
 
@@ -69,11 +90,32 @@ const TYPE_ABBREVIATIONS: Record<string, string> = {
   r: "repuesto",
   h: "herramienta",
   c: "consumible",
+  o: "otros",
+};
+
+// Categoría (para el donut/filtros) a partir del tipo expandido — así nada
+// queda en "Sin categoría" cuando la planilla solo trae la letra de TIPO.
+const CATEGORY_BY_TYPE: Record<string, string> = {
+  equipo: "Equipos",
+  accesorio: "Accesorios",
+  repuesto: "Repuestos",
+  herramienta: "Herramientas",
+  consumible: "Consumibles",
+  otros: "Otros",
 };
 
 function expandItemType(value: string): string {
   const key = value.trim().toLowerCase();
   return TYPE_ABBREVIATIONS[key] ?? value.trim();
+}
+
+// Normaliza seriales: valores como "N/A", "??", "-", vacíos no son un serial
+// real y se guardan como null en vez de texto literal.
+function normalizeSerial(value: string): string | null {
+  const v = value.trim();
+  if (!v) return null;
+  if (/^(n\/?a|s\/n|sin serial|-+|\?+)$/i.test(v)) return null;
+  return v;
 }
 
 function levenshtein(a: string, b: string): number {
@@ -165,14 +207,17 @@ function buildColumnMap(headers: string[]): Record<string, Field> {
 export const FIELD_LABELS: Record<Field, string> = {
   name: "Nombre",
   item_type: "Tipo",
+  item_code: "Código (ITEM)",
   serial: "Serial",
   quantity: "Cantidad",
   unit_price: "Costo unidad",
   total_cost: "Costo total",
-  location_name: "Ubicación",
+  location_name: "Zona",
+  temporary_location: "Ubicación temporal",
   coordinates: "Coordenadas (de la zona)",
   notes: "Observación",
-  purchase_date: "Fecha",
+  purchase_date: "Fecha de compra",
+  inventory_date: "Fecha de conteo",
   category: "Categoría",
 };
 
@@ -191,7 +236,7 @@ export interface ParseResult {
 function detectHeaderRow(matrix: unknown[][]): number {
   let bestRow = 0;
   let bestScore = -1;
-  const scanLimit = Math.min(matrix.length, 20);
+  const scanLimit = Math.min(matrix.length, 30);
   for (let i = 0; i < scanLimit; i++) {
     const row = matrix[i] ?? [];
     let matchCount = 0;
@@ -251,24 +296,27 @@ export async function parseExcelFile(file: File): Promise<ParseResult> {
   const allHeaders = Array.from(new Set(rows.flatMap((r) => Object.keys(r))));
   const columnMap = buildColumnMap(allHeaders);
 
-  // Si la planilla trae dos columnas de ubicación (ej: "ubicación temporal"
-  // y "ubicación en almacén"), solo una puede ser la zona real — la otra se
-  // guarda como observación para no perder el dato en silencio.
+  // Si la planilla trae una columna de ubicación extra que no se reconoció
+  // como zona fija ni como "ubicación temporal" explícita (ej. nombres poco
+  // usuales), se guarda igual como ubicación temporal en vez de perderla.
   let secondaryLocationHeader: string | null = null;
-  for (const h of allHeaders) {
-    if (columnMap[h]) continue;
-    const best = bestFieldMatch(normalize(h));
-    if (best && best.field === "location_name" && best.score >= 0.55) {
-      secondaryLocationHeader = h;
-      break;
+  if (!Object.values(columnMap).includes("temporary_location")) {
+    for (const h of allHeaders) {
+      if (columnMap[h]) continue;
+      const best = bestFieldMatch(normalize(h));
+      if (best && best.field === "location_name" && best.score >= 0.55) {
+        secondaryLocationHeader = h;
+        break;
+      }
     }
   }
 
   const columnMapList = Object.entries(columnMap).map(([header, field]) => ({ header, field: FIELD_LABELS[field] }));
   if (secondaryLocationHeader) {
-    columnMapList.push({ header: secondaryLocationHeader, field: "Observación (ubicación temporal)" });
+    columnMapList.push({ header: secondaryLocationHeader, field: "Ubicación temporal (adicional)" });
   }
   const unmatchedHeaders = allHeaders.filter((h) => !columnMap[h] && h !== secondaryLocationHeader);
+  const hasItemCodeColumn = Object.values(columnMap).includes("item_code");
 
   const parsedRows = rows.map((row, i) => {
     const mapped: Partial<Record<Field, string>> = {};
@@ -294,31 +342,55 @@ export async function parseExcelFile(file: File): Promise<ParseResult> {
       if (!isNaN(total) && quantity > 0) unitPrice = total / quantity;
     }
 
-    let notes = mapped.notes?.trim() || null;
-    if (secondaryLocationHeader) {
+    let temporaryLocation = mapped.temporary_location?.trim() || null;
+    if (secondaryLocationHeader && !temporaryLocation) {
       const tempLocationValue = row[secondaryLocationHeader];
       if (tempLocationValue !== "" && tempLocationValue != null) {
-        const tempLocationText = `Ubicación temporal: ${String(tempLocationValue).trim()}`;
-        notes = notes ? `${notes} · ${tempLocationText}` : tempLocationText;
+        temporaryLocation = String(tempLocationValue).trim();
       }
     }
 
+    const notes = mapped.notes?.trim() || null;
+    const expandedType = mapped.item_type ? expandItemType(mapped.item_type) : null;
+    const category = mapped.category?.trim() || (expandedType ? CATEGORY_BY_TYPE[expandedType.toLowerCase()] ?? null : null);
+
     const name = mapped.name?.trim() || "";
+    const itemCode = mapped.item_code?.trim() || null;
+    const itemCodeNum = itemCode != null ? Number(itemCode) : null;
+    const itemCodeInvalid = hasItemCodeColumn && (itemCodeNum == null || isNaN(itemCodeNum) || itemCodeNum <= 0);
+
     return {
       name,
-      item_type: mapped.item_type ? expandItemType(mapped.item_type) : null,
-      serial: mapped.serial ?? null,
+      item_type: expandedType,
+      item_code: itemCode,
+      serial: mapped.serial ? normalizeSerial(mapped.serial) : null,
       quantity,
       unit_price: unitPrice,
       location_name: mapped.location_name ?? null,
+      temporary_location: temporaryLocation,
       coordinates: mapped.coordinates?.trim() || null,
       notes,
       purchase_date: mapped.purchase_date ?? null,
-      category: mapped.category ?? null,
+      inventory_date: mapped.inventory_date ?? null,
+      category,
       rowNumber: headerRowIndex + rowOriginalIndex[i] + 2,
-      error: name ? null : "Falta la descripción/nombre",
+      error: !name ? "Falta la descripción/nombre" : itemCodeInvalid ? "El código de ITEM no es válido" : null,
     };
   });
+
+  // Un mismo código de ITEM repetido dentro del archivo es un error de la
+  // planilla, no algo para resolver en silencio (sería ambiguo a cuál de
+  // las dos filas hacerle upsert). Se deja la primera aparición como está y
+  // se marca error en las siguientes.
+  const seenItemCodes = new Set<string>();
+  for (const r of parsedRows) {
+    if (r.error || !r.item_code) continue;
+    if (seenItemCodes.has(r.item_code)) {
+      r.error = `Código de ITEM "${r.item_code}" repetido en el archivo`;
+    } else {
+      seenItemCodes.add(r.item_code);
+    }
+  }
 
   return { rows: parsedRows, columnMap: columnMapList, unmatchedHeaders, headerRowSkipped: headerRowIndex };
 }

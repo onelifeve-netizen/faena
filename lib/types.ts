@@ -20,6 +20,8 @@ export interface Location {
   created_at: string;
 }
 
+export type MachineSource = "import" | "manual";
+
 export interface Machine {
   id: string;
   company_id: string;
@@ -40,6 +42,27 @@ export interface Machine {
   purchase_price_fx_rate: number;
   purchase_date: string | null;
   useful_life_years: number | null;
+  quantity: number;
+  item_code: string | null;
+  temporary_location: string | null;
+  inventory_date: string | null;
+  source: MachineSource;
+}
+
+export interface ImportLog {
+  id: string;
+  company_id: string;
+  created_at: string;
+  file_name: string;
+  uploaded_by_email: string | null;
+  mode: "update" | "replace";
+  created_count: number;
+  updated_count: number;
+  unchanged_count: number;
+  ignored_count: number;
+  not_found_count: number;
+  total_value: number | null;
+  total_value_currency: string | null;
 }
 
 export type ToolCondition = "bueno" | "regular" | "malo" | "reponer";

@@ -6,3 +6,7 @@ out
 *.tsbuildinfo
 .DS_Store
 supabase/.temp
+
+# Archivo real del usuario (inventario con costos/ubicaciones reales) —
+# nunca al repo público, se usa solo localmente para los tests del importador.
+tests/fixtures/*.xlsx

@@ -17,7 +17,14 @@ export default function ExcelImport({ zones, onDone, onClose }: { zones: Locatio
   const [parsing, setParsing] = useState(false);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState("");
-  const [done, setDone] = useState<number | null>(null);
+  const [fileCurrency, setFileCurrency] = useState("USD");
+  const [done, setDone] = useState<{
+    created: number;
+    updated: number;
+    notFound: number;
+    ignored: number;
+    totalValue: number;
+  } | null>(null);
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -75,29 +82,86 @@ export default function ExcelImport({ zones, onDone, onClose }: { zones: Locatio
         if (zoneId) await supabase.from("locations").update({ coordinates: coords }).eq("id", zoneId);
       }
 
-      const toInsert = valid.flatMap((r) =>
-        Array.from({ length: r.quantity }, () => ({
+      // Para no duplicar en reimportaciones: traemos los artículos que ya
+      // vinieron de un Excel antes (nunca los cargados a mano) para poder
+      // actualizar en vez de crear de nuevo. Prioridad de match: código de
+      // ITEM primero, y si no hay o no matchea, el serial real (nunca el
+      // nombre solo — hay nombres repetidos que son unidades distintas).
+      const { data: existingImported } = await supabase.from("machines").select("id, item_code, serial").eq("source", "import");
+      const byItemCode = new Map((existingImported ?? []).filter((m) => m.item_code).map((m) => [m.item_code as string, m.id]));
+      const bySerial = new Map((existingImported ?? []).filter((m) => m.serial).map((m) => [m.serial as string, m.id]));
+      const seenExistingIds = new Set<string>();
+
+      let createdCount = 0;
+      let updatedCount = 0;
+
+      for (const r of valid) {
+        const payload = {
           name: r.name,
           item_type: r.item_type?.toLowerCase() || "equipo",
+          item_code: r.item_code,
           serial: r.serial,
           category: r.category,
           notes: r.notes,
           purchase_date: r.purchase_date,
+          inventory_date: r.inventory_date,
+          quantity: r.quantity,
           purchase_price: r.unit_price,
-          purchase_price_currency: "ARS",
+          purchase_price_currency: fileCurrency,
           purchase_price_fx_rate: 1,
           status: "disponible",
           location_id: r.location_name ? zoneByName.get(r.location_name.trim().toLowerCase()) ?? null : null,
-        }))
-      );
+          temporary_location: r.temporary_location,
+          source: "import" as const,
+        };
 
-      const { error: insertError } = await supabase.from("machines").insert(toInsert);
-      if (insertError) {
-        setError("No se pudo completar la importación. Revisá que los datos sean válidos.");
-        return;
+        const existingId = (r.item_code && byItemCode.get(r.item_code)) || (r.serial && bySerial.get(r.serial)) || null;
+        if (existingId) {
+          seenExistingIds.add(existingId);
+          const { error: updErr } = await supabase.from("machines").update(payload).eq("id", existingId);
+          if (updErr) {
+            setError("No se pudo completar la importación. Revisá que los datos sean válidos.");
+            return;
+          }
+          updatedCount++;
+        } else {
+          const { error: insErr } = await supabase.from("machines").insert(payload);
+          if (insErr) {
+            setError("No se pudo completar la importación. Revisá que los datos sean válidos.");
+            return;
+          }
+          createdCount++;
+        }
       }
-      await logAudit("machine", null, "importación desde Excel", `${toInsert.length} artículo(s) agregados`);
-      setDone(toInsert.length);
+
+      // Artículos que ya estaban importados pero no aparecieron en este
+      // archivo: no se borran, solo se cuentan para avisar que puede que
+      // falten en el último conteo.
+      const notFoundCount = (existingImported ?? []).filter((m) => !seenExistingIds.has(m.id)).length;
+      const ignoredCount = rows.length - valid.length;
+      const totalValue = valid.reduce((s, r) => s + (r.unit_price ?? 0) * r.quantity, 0);
+
+      const { data: userData } = await supabase.auth.getUser();
+      await supabase.from("import_logs").insert({
+        file_name: fileName,
+        uploaded_by_email: userData.user?.email ?? null,
+        mode: "update",
+        created_count: createdCount,
+        updated_count: updatedCount,
+        unchanged_count: 0,
+        ignored_count: ignoredCount,
+        not_found_count: notFoundCount,
+        total_value: totalValue,
+        total_value_currency: fileCurrency,
+      });
+
+      await logAudit(
+        "machine",
+        null,
+        "importación desde Excel",
+        `${createdCount} creado(s), ${updatedCount} actualizado(s), ${notFoundCount} no encontrado(s) en este conteo`
+      );
+      setDone({ created: createdCount, updated: updatedCount, notFound: notFoundCount, ignored: ignoredCount, totalValue });
       setRows([]);
       setColumnMap([]);
       setUnmatchedHeaders([]);
@@ -122,7 +186,15 @@ export default function ExcelImport({ zones, onDone, onClose }: { zones: Locatio
 
       {done !== null ? (
         <div className="bg-ok/10 border border-ok/20 rounded-tag px-4 py-4 mt-3">
-          <p className="text-base font-medium text-ok">✓ ¡Listo! Se cargaron {done} artículo(s) al inventario.</p>
+          <p className="text-base font-medium text-ok">✓ ¡Listo!</p>
+          <p className="text-sm text-ink mt-1">
+            Se crearon {done.created} artículo(s), se actualizaron {done.updated}.
+            {done.ignored > 0 && ` Se ignoraron ${done.ignored} fila(s) con problemas.`}
+            {done.notFound > 0 && ` ${done.notFound} artículo(s) ya cargados no aparecieron en este archivo — no se borraron, pero puede que falten en el último conteo.`}
+          </p>
+          <p className="text-sm text-steel mt-1">
+            Valor total del archivo: {fileCurrency} {done.totalValue.toLocaleString("es-AR")}
+          </p>
           <button onClick={onClose} className="focus-ring text-sm text-accent font-mono hover:underline mt-2">
             cerrar
           </button>
@@ -180,6 +252,17 @@ export default function ExcelImport({ zones, onDone, onClose }: { zones: Locatio
           {rows.length > 0 && (
             <div className="mt-5">
               <p className="text-sm font-semibold text-ink mb-2">Paso 3 — Confirmá la importación</p>
+              <label className="flex items-center gap-2 text-sm text-steel mb-3">
+                Moneda de los costos de este archivo:
+                <select
+                  value={fileCurrency}
+                  onChange={(e) => setFileCurrency(e.target.value)}
+                  className="focus-ring border border-line rounded-tag px-2 py-1 text-sm"
+                >
+                  <option value="USD">USD</option>
+                  <option value="ARS">ARS</option>
+                </select>
+              </label>
               <p className="text-sm text-steel mb-2">
                 <span className="text-ok font-medium">{validCount} artículo(s) listos</span> para cargar
                 {errorCount > 0 && <span className="text-warn"> · {errorCount} fila(s) con problema, no se van a cargar</span>}
