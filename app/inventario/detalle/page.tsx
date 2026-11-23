@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { Machine, WorkOrder, WorkOrderType, WorkOrderPriority, WorkOrderStatus, MaintenanceSchedule, MachineDepreciation, MachineSpec, MachinePhoto, Location, TransferNote, ToolConditionLog, ToolCondition } from "@/lib/types";
 import { itemTypeLabel, CONDITION_LABELS, CONDITION_STYLES } from "@/lib/itemTypes";
@@ -24,6 +24,7 @@ export default function InventarioDetalle() {
 
 function InventarioDetalleInner() {
   const { role } = useMyRole();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const id = searchParams.get("id") ?? "";
   const [machine, setMachine] = useState<Machine | null>(null);
@@ -210,6 +211,16 @@ function InventarioDetalleInner() {
     const zoneName = zones.find((z) => z.id === zoneId)?.name ?? "sin zona";
     await logAudit("machine", id, "zona cambiada", `"${machine?.name}" → ${zoneName}`);
     load();
+  }
+
+  async function deleteMachine() {
+    if (!machine) return;
+    if (!confirm(`¿Eliminar "${machine.name}" del inventario? Esto no se puede deshacer.`)) return;
+    setZoneError("");
+    const ok = await runMutation(() => supabase.from("machines").delete().eq("id", machine.id), setZoneError);
+    if (!ok) return;
+    await logAudit("machine", machine.id, "artículo eliminado", machine.name);
+    router.push("/inventario");
   }
 
   function flashAccessorySuccess(text: string) {
@@ -430,9 +441,16 @@ function InventarioDetalleInner() {
 
   return (
     <div className="max-w-6xl">
-      <Link href="/inventario" className="focus-ring inline-flex items-center gap-1 text-xs text-steel font-mono hover:text-accent hover:underline mb-3">
-        ← volver a Inventario
-      </Link>
+      <div className="flex items-center justify-between mb-3">
+        <Link href="/inventario" className="focus-ring inline-flex items-center gap-1 text-xs text-steel font-mono hover:text-accent hover:underline">
+          ← volver a Inventario
+        </Link>
+        {canWrite(role) && (
+          <button onClick={deleteMachine} className="focus-ring text-xs text-warn font-mono hover:underline">
+            🗑 eliminar este artículo
+          </button>
+        )}
+      </div>
       <header className="mb-6 flex items-start justify-between">
         <div>
           <p className="font-mono text-xs text-steel uppercase tracking-wide">
@@ -717,7 +735,17 @@ function InventarioDetalleInner() {
                 onChange={(e) => setLinkAccessoryId(e.target.value)}
               >
                 <option value="">Vincular artículo ya cargado...</option>
-                {unlinkedMachines.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                {[...unlinkedMachines]
+                  .sort((a, b) => {
+                    const aMatch = machine.temporary_location && a.temporary_location === machine.temporary_location ? 0 : 1;
+                    const bMatch = machine.temporary_location && b.temporary_location === machine.temporary_location ? 0 : 1;
+                    return aMatch - bMatch || a.name.localeCompare(b.name);
+                  })
+                  .map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}{m.temporary_location ? ` (${m.temporary_location})` : ""}
+                    </option>
+                  ))}
               </select>
               <button onClick={linkAccessory} disabled={!linkAccessoryId} className="focus-ring text-xs bg-ink text-white px-3 rounded-tag disabled:opacity-40 shrink-0">
                 vincular

@@ -17,6 +17,7 @@ import DonutChart from "@/components/DonutChart";
 import { IconBox } from "@/components/Icons";
 import ExcelImport from "@/components/ExcelImport";
 import { useMyRole, canWrite } from "@/lib/roles";
+import Modal from "@/components/Modal";
 
 const CHART_COLORS = ["#6D28D9", "#F4C430", "#2E86AB", "#E07A5F", "#81B29A", "#A34A22", "#3D5A80"];
 
@@ -46,14 +47,12 @@ export default function Inventario() {
   const [showCostByZone, setShowCostByZone] = useState(false);
   const [zoneRenames, setZoneRenames] = useState<Record<string, string>>({});
   const [zoneMergeTarget, setZoneMergeTarget] = useState<Record<string, string>>({});
-  const [groupMode, setGroupMode] = useState<"category" | "zone">("category");
   const [zoneError, setZoneError] = useState("");
   const [jobByMachine, setJobByMachine] = useState<Record<string, { id: string; name: string }>>({});
   const [conditionByMachine, setConditionByMachine] = useState<Record<string, ToolCondition>>({});
   const [thumbByMachine, setThumbByMachine] = useState<Record<string, string>>({});
   const [serial, setSerial] = useState("");
   const [locationFilter, setLocationFilter] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [purchasePrice, setPurchasePrice] = useState("");
   const [purchaseCurrency, setPurchaseCurrency] = useState("ARS");
@@ -65,6 +64,8 @@ export default function Inventario() {
   const [serialPhoto, setSerialPhoto] = useState<File | null>(null);
   const [formError, setFormError] = useState("");
   const [listError, setListError] = useState("");
+  const [showDeleteAll, setShowDeleteAll] = useState(false);
+  const [deleteAllConfirmText, setDeleteAllConfirmText] = useState("");
 
   async function load() {
     const [machRes, zonesRes, jmRes, condRes, photosRes] = await Promise.all([
@@ -213,11 +214,9 @@ export default function Inventario() {
   }
 
   const nameById = new Map(machines.map((m) => [m.id, m.name]));
-  const categories = Array.from(new Set(machines.map((m) => m.category?.trim()).filter((c): c is string => !!c))).sort();
   const types = Array.from(new Set([...DEFAULT_ITEM_TYPES, ...machines.map((m) => m.item_type?.trim()).filter((t): t is string => !!t)]));
   const filteredMachines = machines
     .filter((m) => !locationFilter || m.location_id === locationFilter)
-    .filter((m) => !categoryFilter || m.category === categoryFilter)
     .filter((m) => !typeFilter || m.item_type === typeFilter)
     .sort((a, b) => (a.category || "zzz").localeCompare(b.category || "zzz") || a.name.localeCompare(b.name));
 
@@ -226,6 +225,18 @@ export default function Inventario() {
     const ok = await runMutation(() => supabase.from("machines").update({ status }).eq("id", id), setListError);
     if (!ok) return;
     await logAudit("machine", id, "cambio de estado", `"${name}" pasó a estado "${status}"`);
+    load();
+  }
+
+  async function deleteAllMachines() {
+    if (deleteAllConfirmText.trim().toUpperCase() !== "ELIMINAR TODO") return;
+    setListError("");
+    const count = machines.length;
+    const ok = await runMutation(() => supabase.from("machines").delete().not("id", "is", null), setListError);
+    if (!ok) return;
+    await logAudit("machine", null, "inventario vaciado", `Se eliminaron ${count} artículo(s) de una sola vez`);
+    setShowDeleteAll(false);
+    setDeleteAllConfirmText("");
     load();
   }
 
@@ -246,9 +257,44 @@ export default function Inventario() {
             >
               {showForm ? "Cancelar" : "+ Agregar artículo"}
             </button>
+            {machines.length > 0 && (
+              <button onClick={() => setShowDeleteAll(true)} className="focus-ring text-xs text-warn font-mono hover:underline">
+                🗑 eliminar todo
+              </button>
+            )}
           </div>
         )}
       </header>
+
+      {showDeleteAll && (
+        <Modal
+          title="Eliminar todo el inventario"
+          onClose={() => {
+            setShowDeleteAll(false);
+            setDeleteAllConfirmText("");
+          }}
+        >
+          <p className="text-sm text-warn font-medium mb-2">
+            ⚠ Esto borra los {machines.length} artículo(s) cargados ahora mismo. No se puede deshacer.
+          </p>
+          <p className="text-sm text-steel mb-3">
+            Para confirmar, escribí <span className="font-mono font-medium text-ink">ELIMINAR TODO</span> acá abajo:
+          </p>
+          <input
+            className="focus-ring w-full border border-line rounded-tag px-3 py-2 text-sm mb-3"
+            value={deleteAllConfirmText}
+            onChange={(e) => setDeleteAllConfirmText(e.target.value)}
+            placeholder="ELIMINAR TODO"
+          />
+          <button
+            onClick={deleteAllMachines}
+            disabled={deleteAllConfirmText.trim().toUpperCase() !== "ELIMINAR TODO"}
+            className="focus-ring w-full bg-warn text-white text-sm font-medium py-2 rounded-tag disabled:opacity-40"
+          >
+            Sí, eliminar todo el inventario
+          </button>
+        </Modal>
+      )}
 
       {zones.length === 0 && canWrite(role) && !loading && (
         <div className="bg-info/10 border border-info/20 rounded-tag px-4 py-3 mb-6 flex items-center justify-between gap-3">
@@ -392,13 +438,13 @@ export default function Inventario() {
       {!loading && machines.length > 0 && (
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-            <KpiCard label="Artículos totales" value={machines.length.toString()} icon={IconBox} accent="accent" />
-            <KpiCard label="Disponibles" value={machines.filter((m) => m.status === "disponible").length.toString()} accent="ok" />
-            <KpiCard label="En obra" value={machines.filter((m) => m.status === "en_obra").length.toString()} accent="info" />
+            <KpiCard label="Artículos (líneas)" value={machines.length.toString()} icon={IconBox} accent="accent" />
+            <KpiCard label="Unidades disponibles" value={machines.filter((m) => m.status === "disponible").reduce((s, m) => s + m.quantity, 0).toString()} accent="ok" />
+            <KpiCard label="Unidades en obra" value={machines.filter((m) => m.status === "en_obra").reduce((s, m) => s + m.quantity, 0).toString()} accent="info" />
             <KpiCard
               label="Valor total cargado"
               value={formatMoney(
-                machines.reduce((sum, m) => sum + (m.purchase_price != null ? toReference(m.purchase_price, m.purchase_price_fx_rate) : 0), 0),
+                machines.reduce((sum, m) => sum + (m.purchase_price != null ? toReference(m.purchase_price, m.purchase_price_fx_rate) * m.quantity : 0), 0),
                 refCurrency
               )}
               accent="gold"
@@ -413,13 +459,19 @@ export default function Inventario() {
 
           <div className="bg-panel border border-line rounded-tag shadow-card p-4 mb-6 flex flex-wrap items-center gap-6">
             <DonutChart
-              segments={Object.entries(
-                machines.reduce<Record<string, number>>((acc, m) => {
-                  const key = m.category?.trim() || "Sin categoría";
-                  acc[key] = (acc[key] ?? 0) + 1;
-                  return acc;
-                }, {})
-              ).map(([label, value]) => ({ label, value, color: categoryColor(label === "Sin categoría" ? null : label, categories) }))}
+              segments={zones
+                .map((z) => ({
+                  label: z.name,
+                  value: machines.filter((m) => m.location_id === z.id).reduce((s, m) => s + m.quantity, 0),
+                  color: categoryColor(z.name, zones.map((zz) => zz.name)),
+                }))
+                .concat([
+                  {
+                    label: "Sin zona asignada",
+                    value: machines.filter((m) => !m.location_id).reduce((s, m) => s + m.quantity, 0),
+                    color: "#C7CBD9",
+                  },
+                ])}
               size={84}
             />
             <div className="flex flex-wrap gap-3 flex-1">
@@ -434,21 +486,6 @@ export default function Inventario() {
                   {types.map((t) => <option key={t} value={t}>{itemTypeLabel(t)}</option>)}
                 </select>
               </label>
-              {categories.length > 0 && (
-                <label className="text-xs text-steel">
-                  Categoría
-                  <select
-                    className="focus-ring mt-1 block border border-line rounded-tag px-3 py-1.5 text-sm bg-white"
-                    value={categoryFilter}
-                    onChange={(e) => setCategoryFilter(e.target.value)}
-                  >
-                    <option value="">Todas</option>
-                    {categories.map((cat) => (
-                      <option key={cat} value={cat}>{cat}</option>
-                    ))}
-                  </select>
-                </label>
-              )}
               {zones.length > 0 && (
                 <label className="text-xs text-steel">
                   Zona
@@ -464,32 +501,26 @@ export default function Inventario() {
                   </select>
                 </label>
               )}
+              {typeFilter && (
+                <div className="self-end mb-1.5 text-xs text-steel">
+                  {itemTypeLabel(typeFilter)}: <span className="text-ink font-medium">{filteredMachines.reduce((s, m) => s + m.quantity, 0)} unidad(es)</span>
+                  {" · "}
+                  <span className="text-ink font-medium">
+                    {formatMoney(
+                      filteredMachines.reduce((sum, m) => sum + (m.purchase_price != null ? toReference(m.purchase_price, m.purchase_price_fx_rate) * m.quantity : 0), 0),
+                      refCurrency
+                    )}
+                  </span>
+                </div>
+              )}
               {zones.length > 0 && (
-                <>
-                  <div className="flex items-center gap-1 self-end mb-1.5 bg-base rounded-tag p-0.5">
-                    <button
-                      type="button"
-                      onClick={() => setGroupMode("category")}
-                      className={`focus-ring text-xs px-2 py-1 rounded-tag ${groupMode === "category" ? "bg-white shadow-sm text-ink" : "text-steel"}`}
-                    >
-                      por categoría
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setGroupMode("zone")}
-                      className={`focus-ring text-xs px-2 py-1 rounded-tag ${groupMode === "zone" ? "bg-white shadow-sm text-ink" : "text-steel"}`}
-                    >
-                      por zona
-                    </button>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowCostByZone((s) => !s)}
-                    className="focus-ring text-xs text-accent font-mono hover:underline self-end mb-1.5"
-                  >
-                    {showCostByZone ? "ocultar costo por zona" : "ver costo por zona"}
-                  </button>
-                </>
+                <button
+                  type="button"
+                  onClick={() => setShowCostByZone((s) => !s)}
+                  className="focus-ring text-xs text-accent font-mono hover:underline self-end mb-1.5"
+                >
+                  {showCostByZone ? "ocultar costo por zona" : "ver costo por zona"}
+                </button>
               )}
               {canWrite(role) && (
                 <button
@@ -510,22 +541,24 @@ export default function Inventario() {
                 {[...zones]
                   .map((z) => {
                     const items = machines.filter((m) => m.location_id === z.id);
-                    const total = items.reduce((sum, m) => sum + (m.purchase_price != null ? toReference(m.purchase_price, m.purchase_price_fx_rate) : 0), 0);
-                    return { zone: z, count: items.length, total };
+                    const units = items.reduce((s, m) => s + m.quantity, 0);
+                    const total = items.reduce((sum, m) => sum + (m.purchase_price != null ? toReference(m.purchase_price, m.purchase_price_fx_rate) * m.quantity : 0), 0);
+                    return { zone: z, count: items.length, units, total };
                   })
                   .sort((a, b) => b.total - a.total)
-                  .map(({ zone, count, total }) => (
+                  .map(({ zone, count, units, total }) => (
                     <div key={zone.id} className="flex items-center justify-between text-sm">
-                      <span className="text-ink">{zone.name} <span className="text-xs text-steel font-mono">({count} ítems)</span></span>
+                      <span className="text-ink">{zone.name} <span className="text-xs text-steel font-mono">({count} línea{count === 1 ? "" : "s"} · {units} unid.)</span></span>
                       <span className="serial">{formatMoney(total, refCurrency)}</span>
                     </div>
                   ))}
                 {(() => {
                   const sinZona = machines.filter((m) => !m.location_id);
-                  const total = sinZona.reduce((sum, m) => sum + (m.purchase_price != null ? toReference(m.purchase_price, m.purchase_price_fx_rate) : 0), 0);
+                  const units = sinZona.reduce((s, m) => s + m.quantity, 0);
+                  const total = sinZona.reduce((sum, m) => sum + (m.purchase_price != null ? toReference(m.purchase_price, m.purchase_price_fx_rate) * m.quantity : 0), 0);
                   return sinZona.length > 0 ? (
                     <div className="flex items-center justify-between text-sm text-steel pt-1 border-t border-line">
-                      <span>Sin zona asignada <span className="text-xs font-mono">({sinZona.length} ítems)</span></span>
+                      <span>Sin zona asignada <span className="text-xs font-mono">({sinZona.length} línea{sinZona.length === 1 ? "" : "s"} · {units} unid.)</span></span>
                       <span className="serial">{formatMoney(total, refCurrency)}</span>
                     </div>
                   ) : null;
@@ -612,13 +645,12 @@ export default function Inventario() {
         </p>
       ) : (
         <div className="space-y-6">
-          {(groupMode === "zone" ? groupByZone(filteredMachines) : groupByCategory(filteredMachines)).map(([groupLabel, items]) => (
+          {groupByZone(filteredMachines).map(([groupLabel, items]) => (
             <div key={groupLabel}>
               <div className="flex items-center gap-2 mb-2">
-                {groupMode === "category" && (
-                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: categoryColor(groupLabel === "Sin categoría" ? null : groupLabel, categories) }} />
-                )}
-                <p className="text-[11px] text-steel uppercase tracking-wide font-mono">{groupLabel} ({items.length})</p>
+                <p className="text-[11px] text-steel uppercase tracking-wide font-mono">
+                  {groupLabel} ({items.length} línea{items.length === 1 ? "" : "s"} · {items.reduce((s, m) => s + m.quantity, 0)} unidad(es))
+                </p>
               </div>
               <div className="space-y-2">
                 {items.map((m) => (
@@ -657,16 +689,21 @@ export default function Inventario() {
                         </Link>
                       )}
                       <StatusBadge status={m.status} />
-                      {canWrite(role) && (
-                        <select
-                          className="focus-ring text-xs border border-line rounded-tag px-2 py-1 bg-white"
-                          value={m.status}
-                          onChange={(e) => changeStatus(m.id, e.target.value as MachineStatus, m.name)}
-                        >
-                          <option value="disponible">Disponible</option>
-                          <option value="en_obra">En obra</option>
-                          <option value="mantenimiento">Mantenimiento</option>
-                        </select>
+                      {canWrite(role) && m.status === "en_obra" ? (
+                        <span className="text-[11px] text-steel" title="Para devolverlo, hacelo desde el detalle de la obra">
+                          se devuelve desde la obra
+                        </span>
+                      ) : (
+                        canWrite(role) && (
+                          <select
+                            className="focus-ring text-xs border border-line rounded-tag px-2 py-1 bg-white"
+                            value={m.status}
+                            onChange={(e) => changeStatus(m.id, e.target.value as MachineStatus, m.name)}
+                          >
+                            <option value="disponible">Disponible</option>
+                            <option value="mantenimiento">Mantenimiento</option>
+                          </select>
+                        )
                       )}
                     </div>
                   </div>
@@ -678,15 +715,6 @@ export default function Inventario() {
       )}
     </div>
   );
-}
-
-function groupByCategory(machines: Machine[]): [string, Machine[]][] {
-  const groups: Record<string, Machine[]> = {};
-  for (const m of machines) {
-    const key = m.category?.trim() || "Sin categoría";
-    (groups[key] ??= []).push(m);
-  }
-  return Object.entries(groups).sort(([a], [b]) => (a === "Sin categoría" ? 1 : b === "Sin categoría" ? -1 : a.localeCompare(b)));
 }
 
 function groupByZone(machines: Machine[]): [string, Machine[]][] {

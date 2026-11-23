@@ -67,12 +67,20 @@ export default function ExcelImport({ zones, onDone, onClose }: { zones: Locatio
         new Set(valid.map((r) => r.location_name?.trim()).filter((n): n is string => !!n && !zoneByName.has(n.toLowerCase())))
       );
       for (const name of neededNames) {
-        const { data } = await supabase
+        const { data, error: zoneErr } = await supabase
           .from("locations")
           .insert({ name, coordinates: coordsByZoneName.get(name.toLowerCase()) ?? null })
           .select()
           .single();
-        if (data) zoneByName.set(name.toLowerCase(), data.id);
+        if (data) {
+          zoneByName.set(name.toLowerCase(), data.id);
+        } else {
+          // Si falló (ej: ya existe con otra mayúscula/minúscula), la buscamos
+          // en vez de dejar el artículo sin zona en silencio.
+          const { data: existing } = await supabase.from("locations").select("id").ilike("name", name).maybeSingle();
+          if (existing) zoneByName.set(name.toLowerCase(), existing.id);
+          else if (zoneErr) setError(`No se pudo crear la zona "${name}": ${zoneErr.message}`);
+        }
       }
 
       // Zonas que ya existían pero todavía no tenían coordenadas cargadas.
