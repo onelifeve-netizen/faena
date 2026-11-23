@@ -834,6 +834,42 @@ function InventarioDetalleInner() {
               El mantenimiento acumulado ya superó el valor en libros del equipo — evaluar si conviene seguir reparando o reemplazarlo.
             </p>
           )}
+          {(!machine.purchase_date || !machine.useful_life_years) && canWrite(role) && (
+            <div className="mt-4 pt-4 border-t border-line">
+              <p className="text-xs text-steel mb-2">
+                Falta {!machine.purchase_date && !machine.useful_life_years ? "fecha de compra y vida útil" : !machine.purchase_date ? "fecha de compra" : "vida útil"} para calcular la depreciación de verdad — completalo acá:
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <label className="block text-xs text-steel">
+                  Fecha de compra
+                  <input
+                    type="date"
+                    className="focus-ring mt-1 w-full border border-line rounded-tag px-3 py-1.5 text-sm"
+                    value={depPurchaseDate}
+                    onChange={(e) => setDepPurchaseDate(e.target.value)}
+                  />
+                </label>
+                <label className="block text-xs text-steel">
+                  Vida útil (años)
+                  <input
+                    type="number"
+                    className="focus-ring mt-1 w-full border border-line rounded-tag px-3 py-1.5 text-sm"
+                    placeholder="Ej: 5"
+                    value={depUsefulLife}
+                    onChange={(e) => setDepUsefulLife(e.target.value)}
+                  />
+                </label>
+                <button
+                  onClick={saveDepreciationInputs}
+                  disabled={!depPurchaseDate || !depUsefulLife}
+                  className="focus-ring self-end bg-ink text-white text-sm py-1.5 rounded-tag disabled:opacity-40"
+                >
+                  Aplicar depreciación
+                </button>
+              </div>
+              <FormError message={depError} />
+            </div>
+          )}
         </section>
       ) : (
         <section className="bg-panel border border-dashed border-line rounded-tag shadow-card p-5">

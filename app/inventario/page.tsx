@@ -716,7 +716,14 @@ export default function Inventario() {
                           <span className="text-accent">↳ accesorio de {nameById.get(m.parent_machine_id) ?? "equipo eliminado"} · </span>
                         )}
                         {m.location_obj?.name ? <span>{m.location_obj.name} · </span> : <span className="text-steel/50">sin zona · </span>}
+                        {m.quantity > 1 && <span>x{m.quantity} · </span>}
                         <span className="serial">{m.serial || "sin N.° de serie"}</span>
+                        {m.purchase_price != null && (
+                          <span className="serial">
+                            {" · "}
+                            {formatMoney(toReference(m.purchase_price, m.purchase_price_fx_rate) * m.quantity, refCurrency)}
+                          </span>
+                        )}
                       </p>
                     </div>
                     <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
