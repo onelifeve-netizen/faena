@@ -298,6 +298,8 @@ export interface JobBudgetItem {
   unit_price: number;
   currency: string;
   fx_rate: number;
+  applies_tax: boolean;
+  tax_rate: number;
   created_at: string;
 }
 

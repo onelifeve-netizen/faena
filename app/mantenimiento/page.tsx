@@ -32,7 +32,9 @@ export default function Mantenimiento() {
   async function load() {
     const [schedRes, machRes] = await Promise.all([
       supabase.from("maintenance_schedules").select("*, machine:machines(*)").order("next_due_at", { ascending: true }),
-      supabase.from("machines").select("*").order("name"),
+      // Solo equipos y herramientas necesitan mantenimiento programado —
+      // repuestos, consumibles y accesorios quedan afuera a propósito.
+      supabase.from("machines").select("*").in("item_type", ["equipo", "herramienta"]).order("name"),
     ]);
     if (schedRes.error || machRes.error) setListError("No se pudo cargar el mantenimiento. Revisá tu conexión y recargá la página.");
     setSchedules((schedRes.data as MaintenanceSchedule[]) ?? []);

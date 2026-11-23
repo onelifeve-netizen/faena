@@ -141,8 +141,7 @@ export default function Dashboard() {
               <div className="absolute -right-2 bottom-0 w-24 h-24 rounded-full bg-white/5 pointer-events-none" />
               <div className="relative flex items-center justify-between mb-4">
                 <div>
-                  <p className="text-xs uppercase tracking-wide font-mono text-white/60">Resultado financiero</p>
-                  <p className="text-[11px] text-white/40 mt-0.5">Acumulado a hoy en {activeJobsList.length} obra{activeJobsList.length === 1 ? "" : "s"} en curso</p>
+                  <p className="text-[11px] text-white/60">Acumulado a hoy en {activeJobsList.length} obra{activeJobsList.length === 1 ? "" : "s"} en curso</p>
                 </div>
                 <Link href="/obras" className="focus-ring text-[11px] text-white/60 font-mono hover:text-white hover:underline">
                   ver obras →

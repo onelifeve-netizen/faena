@@ -45,6 +45,8 @@ export default function Inventario() {
   const [manageZones, setManageZones] = useState(false);
   const [showCostByZone, setShowCostByZone] = useState(false);
   const [zoneRenames, setZoneRenames] = useState<Record<string, string>>({});
+  const [zoneMergeTarget, setZoneMergeTarget] = useState<Record<string, string>>({});
+  const [groupMode, setGroupMode] = useState<"category" | "zone">("category");
   const [zoneError, setZoneError] = useState("");
   const [jobByMachine, setJobByMachine] = useState<Record<string, { id: string; name: string }>>({});
   const [conditionByMachine, setConditionByMachine] = useState<Record<string, ToolCondition>>({});
@@ -113,12 +115,18 @@ export default function Inventario() {
   }, []);
 
   async function addZone(name: string): Promise<string | null> {
-    const { data, error } = await supabase.from("locations").insert({ name }).select().single();
+    const trimmed = name.trim();
+    const dup = zones.find((z) => z.name.trim().toLowerCase() === trimmed.toLowerCase());
+    if (dup) {
+      setZoneError(`Ya existe una zona llamada "${dup.name}" — usá esa en vez de crear otra.`);
+      return dup.id;
+    }
+    const { data, error } = await supabase.from("locations").insert({ name: trimmed }).select().single();
     if (error || !data) {
       setZoneError("No se pudo crear la zona.");
       return null;
     }
-    await logAudit("location", data.id, "zona creada", name);
+    await logAudit("location", data.id, "zona creada", trimmed);
     setZones((z) => [...z, data as Location].sort((a, b) => a.name.localeCompare(b.name)));
     return data.id;
   }
@@ -138,6 +146,18 @@ export default function Inventario() {
     const ok = await runMutation(() => supabase.from("locations").delete().eq("id", zone.id), setZoneError);
     if (!ok) return;
     await logAudit("location", zone.id, "zona eliminada", zone.name);
+    load();
+  }
+
+  async function mergeZone(source: Location, targetId: string) {
+    setZoneError("");
+    const target = zones.find((z) => z.id === targetId);
+    if (!target) return;
+    const ok1 = await runMutation(() => supabase.from("machines").update({ location_id: targetId }).eq("location_id", source.id), setZoneError);
+    if (!ok1) return;
+    const ok2 = await runMutation(() => supabase.from("locations").delete().eq("id", source.id), setZoneError);
+    if (!ok2) return;
+    await logAudit("location", source.id, "zona fusionada", `"${source.name}" → "${target.name}"`);
     load();
   }
 
@@ -213,7 +233,6 @@ export default function Inventario() {
     <div>
       <header className="mb-8 flex items-center justify-between">
         <div>
-          <p className="font-mono text-xs text-steel uppercase tracking-wide">Maquinaria, herramientas, materiales e insumos</p>
           <h1 className="font-display font-bold text-3xl text-ink">Inventario</h1>
         </div>
         {canWrite(role) && (
@@ -446,13 +465,31 @@ export default function Inventario() {
                 </label>
               )}
               {zones.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setShowCostByZone((s) => !s)}
-                  className="focus-ring text-xs text-accent font-mono hover:underline self-end mb-1.5"
-                >
-                  {showCostByZone ? "ocultar costo por zona" : "ver costo por zona"}
-                </button>
+                <>
+                  <div className="flex items-center gap-1 self-end mb-1.5 bg-base rounded-tag p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setGroupMode("category")}
+                      className={`focus-ring text-xs px-2 py-1 rounded-tag ${groupMode === "category" ? "bg-white shadow-sm text-ink" : "text-steel"}`}
+                    >
+                      por categoría
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setGroupMode("zone")}
+                      className={`focus-ring text-xs px-2 py-1 rounded-tag ${groupMode === "zone" ? "bg-white shadow-sm text-ink" : "text-steel"}`}
+                    >
+                      por zona
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowCostByZone((s) => !s)}
+                    className="focus-ring text-xs text-accent font-mono hover:underline self-end mb-1.5"
+                  >
+                    {showCostByZone ? "ocultar costo por zona" : "ver costo por zona"}
+                  </button>
+                </>
               )}
               {canWrite(role) && (
                 <button
@@ -520,8 +557,21 @@ export default function Inventario() {
                         📍 mapa
                       </a>
                     )}
-                    <button onClick={() => deleteZone(z)} className="focus-ring text-xs text-warn font-mono hover:underline shrink-0">
-                      borrar
+                    <select
+                      className="focus-ring text-xs border border-line rounded-tag px-1 py-1 shrink-0"
+                      value={zoneMergeTarget[z.id] ?? ""}
+                      onChange={(e) => setZoneMergeTarget((r) => ({ ...r, [z.id]: e.target.value }))}
+                    >
+                      <option value="">fusionar en...</option>
+                      {zones.filter((other) => other.id !== z.id).map((other) => (
+                        <option key={other.id} value={other.id}>{other.name}</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => (zoneMergeTarget[z.id] ? mergeZone(z, zoneMergeTarget[z.id]) : deleteZone(z))}
+                      className="focus-ring text-xs text-warn font-mono hover:underline shrink-0"
+                    >
+                      {zoneMergeTarget[z.id] ? "fusionar y borrar" : "borrar"}
                     </button>
                   </div>
                 ))}
@@ -562,11 +612,13 @@ export default function Inventario() {
         </p>
       ) : (
         <div className="space-y-6">
-          {groupByCategory(filteredMachines).map(([cat, items]) => (
-            <div key={cat}>
+          {(groupMode === "zone" ? groupByZone(filteredMachines) : groupByCategory(filteredMachines)).map(([groupLabel, items]) => (
+            <div key={groupLabel}>
               <div className="flex items-center gap-2 mb-2">
-                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: categoryColor(cat === "Sin categoría" ? null : cat, categories) }} />
-                <p className="text-[11px] text-steel uppercase tracking-wide font-mono">{cat} ({items.length})</p>
+                {groupMode === "category" && (
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: categoryColor(groupLabel === "Sin categoría" ? null : groupLabel, categories) }} />
+                )}
+                <p className="text-[11px] text-steel uppercase tracking-wide font-mono">{groupLabel} ({items.length})</p>
               </div>
               <div className="space-y-2">
                 {items.map((m) => (
@@ -635,6 +687,15 @@ function groupByCategory(machines: Machine[]): [string, Machine[]][] {
     (groups[key] ??= []).push(m);
   }
   return Object.entries(groups).sort(([a], [b]) => (a === "Sin categoría" ? 1 : b === "Sin categoría" ? -1 : a.localeCompare(b)));
+}
+
+function groupByZone(machines: Machine[]): [string, Machine[]][] {
+  const groups: Record<string, Machine[]> = {};
+  for (const m of machines) {
+    const key = m.location_obj?.name?.trim() || "Sin zona asignada";
+    (groups[key] ??= []).push(m);
+  }
+  return Object.entries(groups).sort(([a], [b]) => (a === "Sin zona asignada" ? 1 : b === "Sin zona asignada" ? -1 : a.localeCompare(b)));
 }
 
 function KpiCard({

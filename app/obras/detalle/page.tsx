@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import Link from "next/link";
-import { Job, JobExpense, JobMachine, JobLogEntry, Machine, JobStatus, JobWorker, Contact, JobPayment, JobInvoice, JobBudgetItem, JobWip, WorkOrder, Location, JobRequirement } from "@/lib/types";
+import { Job, JobExpense, JobMachine, Machine, JobStatus, JobWorker, Contact, JobPayment, JobInvoice, JobBudgetItem, JobWip, WorkOrder, Location, JobRequirement } from "@/lib/types";
 import StatusBadge from "@/components/StatusBadge";
 import ContactPicker from "@/components/ContactPicker";
 import { CURRENCIES, toReference, formatMoney } from "@/lib/currency";
@@ -13,7 +13,8 @@ import { logAudit } from "@/lib/audit";
 import { runMutation, functionErrorMessage } from "@/lib/errors";
 import FormError from "@/components/FormError";
 import { useMyRole, canWrite } from "@/lib/roles";
-import { requirementStatus, matchingAvailable } from "@/lib/jobRequirements";
+import { requirementStatus, matchingAvailable, jobMissingCount } from "@/lib/jobRequirements";
+import Modal from "@/components/Modal";
 
 export default function ObraDetalle() {
   return (
@@ -40,7 +41,6 @@ function ObraDetalleInner() {
   const [reqMatch, setReqMatch] = useState("");
   const [reqError, setReqError] = useState("");
   const [openRequirementId, setOpenRequirementId] = useState<string | null>(null);
-  const [log, setLog] = useState<JobLogEntry[]>([]);
   const [workers, setWorkers] = useState<JobWorker[]>([]);
   const [openWorker, setOpenWorker] = useState<string | null>(null);
   const [showWorkerForm, setShowWorkerForm] = useState(false);
@@ -71,10 +71,15 @@ function ObraDetalleInner() {
   const [itemPrice, setItemPrice] = useState("");
   const [itemCurrency, setItemCurrency] = useState("ARS");
   const [itemFx, setItemFx] = useState("1");
+  const [itemAppliesTax, setItemAppliesTax] = useState(false);
+  const [itemTaxRate, setItemTaxRate] = useState("21");
   const [itemError, setItemError] = useState("");
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editQty, setEditQty] = useState("1");
   const [editPrice, setEditPrice] = useState("");
+  const [editAppliesTax, setEditAppliesTax] = useState(false);
+  const [editTaxRate, setEditTaxRate] = useState("21");
+  const [showBudgetModal, setShowBudgetModal] = useState(false);
 
   const [expenseDesc, setExpenseDesc] = useState("");
   const [expenseAmount, setExpenseAmount] = useState("");
@@ -83,7 +88,6 @@ function ObraDetalleInner() {
   const [invoiceReadError, setInvoiceReadError] = useState("");
   const [companyId, setCompanyId] = useState("");
   const [selectedMachine, setSelectedMachine] = useState("");
-  const [noteText, setNoteText] = useState("");
 
   const [statusError, setStatusError] = useState("");
   const [expenseError, setExpenseError] = useState("");
@@ -92,15 +96,13 @@ function ObraDetalleInner() {
   const [machineError, setMachineError] = useState("");
   const [workerError, setWorkerError] = useState("");
   const [workerSuccess, setWorkerSuccess] = useState("");
-  const [noteError, setNoteError] = useState("");
 
   async function loadAll() {
-    const [jobRes, expRes, assignedRes, machRes, logRes, workersRes, payRes, invRes, itemsRes, ordersRes, wipRes, settingsRes, compRes, zonesRes, reqRes] = await Promise.all([
+    const [jobRes, expRes, assignedRes, machRes, workersRes, payRes, invRes, itemsRes, ordersRes, wipRes, settingsRes, compRes, zonesRes, reqRes] = await Promise.all([
       supabase.from("jobs").select("*").eq("id", id).single(),
       supabase.from("job_expenses").select("*").eq("job_id", id).order("created_at", { ascending: false }),
       supabase.from("job_machines").select("*, machine:machines(*)").eq("job_id", id).is("returned_at", null),
       supabase.from("machines").select("*, location_obj:locations(*)").eq("status", "disponible"),
-      supabase.from("job_log").select("*").eq("job_id", id).order("created_at", { ascending: false }),
       supabase.from("job_workers").select("*").eq("job_id", id).order("created_at", { ascending: true }),
       supabase.from("job_payments").select("*").eq("job_id", id).order("paid_at", { ascending: false }),
       supabase.from("job_invoices").select("*").eq("job_id", id).order("invoiced_at", { ascending: false }),
@@ -118,7 +120,6 @@ function ObraDetalleInner() {
     setZones((zonesRes.data as Location[]) ?? []);
     setAvailableMachines(machRes.data ?? []);
     setRequirements((reqRes.data as JobRequirement[]) ?? []);
-    setLog(logRes.data ?? []);
     setWorkers(workersRes.data ?? []);
     setPayments(payRes.data ?? []);
     setInvoices(invRes.data ?? []);
@@ -257,6 +258,18 @@ function ObraDetalleInner() {
     );
     if (!ok) return;
     await logAudit("job_invoice", id, "factura registrada", `${invAmount} ${invCurrency}${invNote ? ` — ${invNote}` : ""}`);
+
+    // La factura autocompleta el pago recibido — se puede editar/borrar
+    // después en "Pagos recibidos" si se cobró distinto.
+    await supabase.from("job_payments").insert({
+      job_id: id,
+      amount: Number(invAmount),
+      currency: invCurrency,
+      fx_rate: invFx ? Number(invFx) : 1,
+      note: "Generado automáticamente desde la factura",
+    });
+    await logAudit("job_payment", id, "pago registrado", `${invAmount} ${invCurrency} — generado desde factura`);
+
     setInvAmount("");
     setInvNote("");
     setInvPhotoUrl(null);
@@ -278,6 +291,19 @@ function ObraDetalleInner() {
     }
   }
 
+  // El presupuesto de la obra (jobs.budget) deja de editarse aparte: siempre
+  // es un espejo del total itemizado, recalculado cada vez que cambia un ítem.
+  async function syncBudgetFromItems(items: JobBudgetItem[]) {
+    const total = Math.round(
+      items.reduce((sum, it) => {
+        const base = it.quantity * it.unit_price;
+        const withTax = it.applies_tax ? base * (1 + it.tax_rate / 100) : base;
+        return sum + toReference(withTax, it.fx_rate);
+      }, 0)
+    );
+    await supabase.from("jobs").update({ budget: total, budget_currency: refCurrency, budget_fx_rate: 1 }).eq("id", id);
+  }
+
   async function addBudgetItem(e: React.FormEvent) {
     e.preventDefault();
     if (!itemDesc.trim() || !itemPrice) return;
@@ -290,6 +316,8 @@ function ObraDetalleInner() {
           unit_price: Number(itemPrice),
           currency: itemCurrency,
           fx_rate: itemFx ? Number(itemFx) : 1,
+          applies_tax: itemAppliesTax,
+          tax_rate: itemAppliesTax ? Number(itemTaxRate) || 0 : 0,
         }),
       setItemError
     );
@@ -298,6 +326,9 @@ function ObraDetalleInner() {
     setItemDesc("");
     setItemQty("1");
     setItemPrice("");
+    setItemAppliesTax(false);
+    const { data } = await supabase.from("job_budget_items").select("*").eq("job_id", id);
+    await syncBudgetFromItems((data as JobBudgetItem[]) ?? []);
     loadAll();
   }
 
@@ -306,6 +337,8 @@ function ObraDetalleInner() {
     const ok = await runMutation(() => supabase.from("job_budget_items").delete().eq("id", itemId), setItemError);
     if (!ok) return;
     await logAudit("job_budget_item", id, "ítem de presupuesto quitado", desc);
+    const { data } = await supabase.from("job_budget_items").select("*").eq("job_id", id);
+    await syncBudgetFromItems((data as JobBudgetItem[]) ?? []);
     loadAll();
   }
 
@@ -313,29 +346,31 @@ function ObraDetalleInner() {
     setEditingItemId(it.id);
     setEditQty(String(it.quantity));
     setEditPrice(String(it.unit_price));
+    setEditAppliesTax(it.applies_tax);
+    setEditTaxRate(String(it.tax_rate || 21));
     setItemError("");
-  }
-
-  async function useBudgetItemsTotalAsBudget() {
-    const total = Math.round(budgetItemsTotalRef);
-    const ok = await runMutation(
-      () => supabase.from("jobs").update({ budget: total, budget_currency: refCurrency, budget_fx_rate: 1 }).eq("id", id),
-      setItemError
-    );
-    if (!ok) return;
-    await logAudit("job", id, "presupuesto actualizado", `Se usó el total de repuestos (${formatMoney(total, refCurrency)}) como presupuesto`);
-    loadAll();
   }
 
   async function saveEditBudgetItem(itemId: string, desc: string) {
     if (!editQty || !editPrice) return;
     const ok = await runMutation(
-      () => supabase.from("job_budget_items").update({ quantity: Number(editQty), unit_price: Number(editPrice) }).eq("id", itemId),
+      () =>
+        supabase
+          .from("job_budget_items")
+          .update({
+            quantity: Number(editQty),
+            unit_price: Number(editPrice),
+            applies_tax: editAppliesTax,
+            tax_rate: editAppliesTax ? Number(editTaxRate) || 0 : 0,
+          })
+          .eq("id", itemId),
       setItemError
     );
     if (!ok) return;
     await logAudit("job_budget_item", id, "ítem de presupuesto editado", `${desc} → x${editQty} @ ${editPrice}`);
     setEditingItemId(null);
+    const { data } = await supabase.from("job_budget_items").select("*").eq("job_id", id);
+    await syncBudgetFromItems((data as JobBudgetItem[]) ?? []);
     loadAll();
   }
 
@@ -428,15 +463,6 @@ function ObraDetalleInner() {
     loadAll();
   }
 
-  async function addNote(e: React.FormEvent) {
-    e.preventDefault();
-    if (!noteText.trim()) return;
-    const ok = await runMutation(() => supabase.from("job_log").insert({ job_id: id, note: noteText }), setNoteError);
-    if (!ok) return;
-    setNoteText("");
-    loadAll();
-  }
-
   async function addWorker(e: React.FormEvent) {
     e.preventDefault();
     if (!pickedContact) return;
@@ -480,8 +506,13 @@ function ObraDetalleInner() {
   const paidRef = payments.reduce((sum, p) => sum + toReference(Number(p.amount), Number(p.fx_rate)), 0);
   const invoicedRef = invoices.reduce((sum, inv) => sum + toReference(Number(inv.amount), Number(inv.fx_rate)), 0);
   const pendingRef = budgetRef - paidRef;
-  const budgetItemsTotalRef = budgetItems.reduce((sum, it) => sum + toReference(it.quantity * it.unit_price, it.fx_rate), 0);
+  const budgetItemsTotalRef = budgetItems.reduce((sum, it) => {
+    const base = it.quantity * it.unit_price;
+    const withTax = it.applies_tax ? base * (1 + it.tax_rate / 100) : base;
+    return sum + toReference(withTax, it.fx_rate);
+  }, 0);
   const assignableMachines = availableMachines.filter((m) => ["equipo", "herramienta", "accesorio"].includes(m.item_type));
+  const missingCount = jobMissingCount(requirements, availableMachines);
   const assignedValueRef = assigned.reduce((sum, am) => {
     const m = am.machine;
     if (!m?.purchase_price) return sum;
@@ -515,6 +546,11 @@ function ObraDetalleInner() {
         )}
       </header>
       <FormError message={statusError} />
+      {missingCount > 0 && (
+        <div className="bg-warn/10 border border-warn/20 rounded-tag px-4 py-2.5 mb-4 text-sm text-warn">
+          ⚠ {missingCount} necesidad(es) de equipo/herramientas de esta obra sin cubrir con lo disponible hoy.
+        </div>
+      )}
 
       {/* Ficha destacada */}
       <section className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6 grid grid-cols-1 sm:grid-cols-3 gap-6">
@@ -584,6 +620,11 @@ function ObraDetalleInner() {
             {job.budget_currency !== refCurrency && <> · ≈ {formatMoney(budgetRef, refCurrency)}</>}
           </span>
         </div>
+        {canWrite(role) && (
+          <button onClick={() => setShowBudgetModal(true)} className="focus-ring text-xs text-accent font-mono hover:underline mb-2 block">
+            {budgetItems.length === 0 ? "+ crear presupuesto →" : `ver detalle (${budgetItems.length} ítem${budgetItems.length === 1 ? "" : "s"}) / editar →`}
+          </button>
+        )}
         <p className="text-xs text-steel mb-3">Todos los montos de esta página se muestran en {refCurrency} (se puede cambiar en Ajustes), aunque los hayas cargado en otra moneda.</p>
 
         <div className="grid grid-cols-2 gap-4 mb-4">
@@ -676,108 +717,132 @@ function ObraDetalleInner() {
         )}
       </section>
 
-      {/* Repuestos y presupuesto */}
-      <section className="bg-panel border border-line rounded-tag shadow-card p-5">
-        <div className="flex items-center justify-between mb-1">
-          <h2 className="font-display font-bold text-sm">Repuestos y presupuesto</h2>
-          {budgetItems.length > 0 && (
-            <span className="serial">total: {formatMoney(budgetItemsTotalRef, refCurrency)}</span>
-          )}
-        </div>
-        <p className="text-[11px] text-steel font-mono mb-3">
-          Calculadora de materiales y mano de obra para armar o validar el presupuesto — no reemplaza el campo "Presupuesto" de arriba, lo ayuda a construir.
-        </p>
-        {canWrite(role) && budgetItems.length > 0 && (
-          <button
-            onClick={useBudgetItemsTotalAsBudget}
-            className="focus-ring text-[11px] text-accent font-mono hover:underline mb-3 block"
-          >
-            usar este total ({formatMoney(budgetItemsTotalRef, refCurrency)}) como Presupuesto →
-          </button>
-        )}
-        {canWrite(role) && (
-          <>
-            <form onSubmit={addBudgetItem} className="grid grid-cols-2 sm:grid-cols-6 gap-2 mb-4">
-              <input
-                className="focus-ring col-span-2 sm:col-span-2 border border-line rounded-tag px-3 py-1.5 text-sm"
-                placeholder="Material o trabajo"
-                value={itemDesc}
-                onChange={(e) => setItemDesc(e.target.value)}
-              />
-              <input
-                className="focus-ring border border-line rounded-tag px-3 py-1.5 text-sm"
-                placeholder="Cant."
-                type="number"
-                value={itemQty}
-                onChange={(e) => setItemQty(e.target.value)}
-              />
-              <input
-                className="focus-ring border border-line rounded-tag px-3 py-1.5 text-sm"
-                placeholder="Precio unit."
-                type="number"
-                value={itemPrice}
-                onChange={(e) => setItemPrice(e.target.value)}
-              />
-              <select className="focus-ring border border-line rounded-tag px-2 py-1.5 text-sm bg-white" value={itemCurrency} onChange={(e) => setItemCurrency(e.target.value)}>
-                {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
-              <FxRateField className="col-span-2 sm:col-span-6" amount={itemPrice} currency={itemCurrency} refCurrency={refCurrency} fxRate={itemFx} onFxRateChange={setItemFx} />
-              <button className="focus-ring col-span-2 sm:col-span-6 bg-ink text-white text-sm py-1.5 rounded-tag">Agregar ítem</button>
-            </form>
-            <FormError message={itemError} />
-          </>
-        )}
-        {budgetItems.length === 0 ? (
-          <p className="text-sm text-steel">Sin ítems cargados todavía.</p>
-        ) : (
-          <ul className="space-y-1 text-xs text-steel">
-            {budgetItems.map((it) => (
-              <li key={it.id} className="flex flex-wrap justify-between items-center border-b border-line pb-1 gap-2">
-                {editingItemId === it.id ? (
-                  <>
-                    <span className="w-full sm:w-auto sm:flex-1">{it.description}</span>
-                    <input
-                      className="focus-ring w-16 border border-line rounded-tag px-2 py-0.5 text-xs"
-                      type="number"
-                      value={editQty}
-                      onChange={(e) => setEditQty(e.target.value)}
-                    />
-                    <input
-                      className="focus-ring w-24 border border-line rounded-tag px-2 py-0.5 text-xs"
-                      type="number"
-                      value={editPrice}
-                      onChange={(e) => setEditPrice(e.target.value)}
-                    />
-                    <button onClick={() => saveEditBudgetItem(it.id, it.description)} className="focus-ring text-accent hover:underline shrink-0">
-                      guardar
-                    </button>
-                    <button onClick={() => setEditingItemId(null)} className="focus-ring text-steel hover:underline shrink-0">
-                      cancelar
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <span>{it.description} <span className="font-mono">x{it.quantity}</span></span>
-                    <span className="flex items-center gap-2">
-                      <span className="serial">{formatMoney(it.quantity * it.unit_price, it.currency)}</span>
-                      {canWrite(role) && (
-                        <>
-                          <button onClick={() => startEditBudgetItem(it)} className="focus-ring text-accent hover:underline">
-                            editar
-                          </button>
-                          <button onClick={() => removeBudgetItem(it.id, it.description)} className="focus-ring text-warn hover:underline">
-                            quitar
-                          </button>
-                        </>
-                      )}
-                    </span>
-                  </>
+      {showBudgetModal && (
+        <Modal title="Presupuesto de la obra" onClose={() => setShowBudgetModal(false)}>
+          <p className="text-xs text-steel mb-3">
+            Armá el presupuesto ítem por ítem (material o mano de obra) — el total de acá abajo es siempre el "Presupuesto" de la obra, se actualiza solo.
+          </p>
+          {canWrite(role) && (
+            <>
+              <form onSubmit={addBudgetItem} className="grid grid-cols-2 sm:grid-cols-6 gap-2 mb-2">
+                <input
+                  className="focus-ring col-span-2 sm:col-span-2 border border-line rounded-tag px-3 py-1.5 text-sm"
+                  placeholder="Material o trabajo"
+                  value={itemDesc}
+                  onChange={(e) => setItemDesc(e.target.value)}
+                />
+                <input
+                  className="focus-ring border border-line rounded-tag px-3 py-1.5 text-sm"
+                  placeholder="Cant."
+                  type="number"
+                  value={itemQty}
+                  onChange={(e) => setItemQty(e.target.value)}
+                />
+                <input
+                  className="focus-ring border border-line rounded-tag px-3 py-1.5 text-sm"
+                  placeholder="Precio unit."
+                  type="number"
+                  value={itemPrice}
+                  onChange={(e) => setItemPrice(e.target.value)}
+                />
+                <select className="focus-ring border border-line rounded-tag px-2 py-1.5 text-sm bg-white" value={itemCurrency} onChange={(e) => setItemCurrency(e.target.value)}>
+                  {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <FxRateField className="col-span-2 sm:col-span-6" amount={itemPrice} currency={itemCurrency} refCurrency={refCurrency} fxRate={itemFx} onFxRateChange={setItemFx} />
+                <label className="col-span-2 sm:col-span-3 flex items-center gap-1.5 text-xs text-steel">
+                  <input type="checkbox" checked={itemAppliesTax} onChange={(e) => setItemAppliesTax(e.target.checked)} />
+                  aplica impuesto/IVA
+                </label>
+                {itemAppliesTax && (
+                  <input
+                    className="focus-ring col-span-2 sm:col-span-3 border border-line rounded-tag px-3 py-1.5 text-sm"
+                    placeholder="Tasa % (ej: 21)"
+                    type="number"
+                    value={itemTaxRate}
+                    onChange={(e) => setItemTaxRate(e.target.value)}
+                  />
                 )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+                <button className="focus-ring col-span-2 sm:col-span-6 bg-ink text-white text-sm py-1.5 rounded-tag">Agregar ítem</button>
+              </form>
+              <FormError message={itemError} />
+            </>
+          )}
+          {budgetItems.length === 0 ? (
+            <p className="text-sm text-steel mt-3">Sin ítems cargados todavía.</p>
+          ) : (
+            <ul className="space-y-1 text-xs text-steel mt-3">
+              {budgetItems.map((it) => {
+                const base = it.quantity * it.unit_price;
+                const tax = it.applies_tax ? base * (it.tax_rate / 100) : 0;
+                return (
+                  <li key={it.id} className="flex flex-wrap justify-between items-center border-b border-line pb-1 gap-2">
+                    {editingItemId === it.id ? (
+                      <>
+                        <span className="w-full sm:w-auto sm:flex-1">{it.description}</span>
+                        <input
+                          className="focus-ring w-16 border border-line rounded-tag px-2 py-0.5 text-xs"
+                          type="number"
+                          value={editQty}
+                          onChange={(e) => setEditQty(e.target.value)}
+                        />
+                        <input
+                          className="focus-ring w-24 border border-line rounded-tag px-2 py-0.5 text-xs"
+                          type="number"
+                          value={editPrice}
+                          onChange={(e) => setEditPrice(e.target.value)}
+                        />
+                        <label className="flex items-center gap-1 shrink-0">
+                          <input type="checkbox" checked={editAppliesTax} onChange={(e) => setEditAppliesTax(e.target.checked)} />
+                          IVA
+                        </label>
+                        {editAppliesTax && (
+                          <input
+                            className="focus-ring w-16 border border-line rounded-tag px-2 py-0.5 text-xs"
+                            type="number"
+                            value={editTaxRate}
+                            onChange={(e) => setEditTaxRate(e.target.value)}
+                          />
+                        )}
+                        <button onClick={() => saveEditBudgetItem(it.id, it.description)} className="focus-ring text-accent hover:underline shrink-0">
+                          guardar
+                        </button>
+                        <button onClick={() => setEditingItemId(null)} className="focus-ring text-steel hover:underline shrink-0">
+                          cancelar
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <span>{it.description} <span className="font-mono">x{it.quantity}</span></span>
+                        <span className="flex items-center gap-2">
+                          <span className="serial">
+                            {formatMoney(base + tax, it.currency)}
+                            {it.applies_tax && <span className="text-steel"> (IVA {it.tax_rate}% incl.)</span>}
+                          </span>
+                          {canWrite(role) && (
+                            <>
+                              <button onClick={() => startEditBudgetItem(it)} className="focus-ring text-accent hover:underline">
+                                editar
+                              </button>
+                              <button onClick={() => removeBudgetItem(it.id, it.description)} className="focus-ring text-warn hover:underline">
+                                quitar
+                              </button>
+                            </>
+                          )}
+                        </span>
+                      </>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {budgetItems.length > 0 && (
+            <p className="text-sm font-medium text-ink mt-3 pt-2 border-t border-line text-right">
+              Total: {formatMoney(budgetItemsTotalRef, refCurrency)}
+            </p>
+          )}
+        </Modal>
+      )}
 
       {/* Facturación */}
       <section className="bg-panel border border-line rounded-tag shadow-card p-5">
@@ -1165,36 +1230,6 @@ function ObraDetalleInner() {
           </div>
         </section>
       )}
-
-      {/* Bitácora */}
-      <section className="bg-panel border border-line rounded-tag shadow-card p-5">
-        <h2 className="font-display font-bold text-sm mb-3">Bitácora de avance</h2>
-        {canWrite(role) && (
-          <>
-            <form onSubmit={addNote} className="flex gap-2 mb-4">
-              <input
-                className="focus-ring flex-1 border border-line rounded-tag px-3 py-1.5 text-sm"
-                placeholder="Anotar avance de hoy..."
-                value={noteText}
-                onChange={(e) => setNoteText(e.target.value)}
-              />
-              <button className="focus-ring bg-ink text-white text-sm px-4 py-1.5 rounded-tag">Anotar</button>
-            </form>
-            <FormError message={noteError} />
-          </>
-        )}
-        <ul className="space-y-3">
-          {log.map((entry) => (
-            <li key={entry.id} className="text-sm border-l-2 border-line pl-3">
-              <p className="text-ink">{entry.note}</p>
-              <p className="text-[11px] text-steel font-mono mt-0.5">
-                {new Date(entry.created_at).toLocaleString("es-AR")}
-              </p>
-            </li>
-          ))}
-          {log.length === 0 && <p className="text-sm text-steel">Sin anotaciones todavía.</p>}
-        </ul>
-      </section>
 
       </div>
       </div>

@@ -172,8 +172,11 @@ export default function ExcelImport({ zones, onDone, onClose }: { zones: Locatio
     }
   }
 
-  const validCount = rows.filter((r) => !r.error).length;
+  const validRows = rows.filter((r) => !r.error);
+  const validCount = validRows.length;
   const errorCount = rows.length - validCount;
+  const validQuantity = validRows.reduce((s, r) => s + r.quantity, 0);
+  const validValue = validRows.reduce((s, r) => s + (r.unit_price ?? 0) * r.quantity, 0);
 
   return (
     <div className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6">
@@ -266,6 +269,18 @@ export default function ExcelImport({ zones, onDone, onClose }: { zones: Locatio
               <p className="text-sm text-steel mb-2">
                 <span className="text-ok font-medium">{validCount} artículo(s) listos</span> para cargar
                 {errorCount > 0 && <span className="text-warn"> · {errorCount} fila(s) con problema, no se van a cargar</span>}
+              </p>
+              <div className="bg-base rounded-tag p-3 mb-3 flex flex-wrap gap-x-6 gap-y-1 text-sm">
+                <span className="text-steel">
+                  Cantidad total: <span className="text-ink font-medium">{validQuantity.toLocaleString("es-AR")}</span>
+                </span>
+                <span className="text-steel">
+                  Valor total ({fileCurrency}): <span className="text-ink font-medium">{validValue.toLocaleString("es-AR")}</span>
+                </span>
+              </div>
+              <p className="text-[11px] text-steel mb-2">
+                Estos totales son la suma de las filas válidas de arriba — no los copiamos de ninguna fila "total" que
+                tenga tu archivo, se calculan de nuevo acá.
               </p>
               <div className="max-h-64 overflow-y-auto overflow-x-auto border border-line rounded-tag">
                 <table className="w-full min-w-[640px] text-sm">
