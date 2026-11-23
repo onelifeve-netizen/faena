@@ -210,15 +210,24 @@ export default function Dashboard() {
                 className="focus-ring bg-panel border border-line rounded-tag shadow-card p-5 flex flex-col hover:-translate-y-0.5 hover:shadow-md transition-all duration-200"
               >
                 <p className="text-xs uppercase tracking-wide font-mono text-steel mb-3">Estados de equipos</p>
-                <DonutChart
-                  size={96}
-                  segments={[
-                    { label: "Disponibles", value: disponibles, color: "#0E9F6E" },
-                    { label: "En obra", value: enObra, color: "#2563EB" },
-                    { label: "Mantenimiento", value: enMantenimiento, color: "#D97706" },
-                  ]}
-                />
-                <p className="text-[11px] text-accent font-mono mt-2">ver inventario →</p>
+                {machines.length === 0 ? (
+                  <div className="flex-1 flex flex-col justify-center">
+                    <p className="text-sm text-steel">Todavía no cargaste equipos en el inventario.</p>
+                    <p className="text-[11px] text-accent font-mono mt-2">+ ir a cargar inventario →</p>
+                  </div>
+                ) : (
+                  <>
+                    <DonutChart
+                      size={96}
+                      segments={[
+                        { label: "Disponibles", value: disponibles, color: "#0E9F6E" },
+                        { label: "En obra", value: enObra, color: "#2563EB" },
+                        { label: "Mantenimiento", value: enMantenimiento, color: "#D97706" },
+                      ]}
+                    />
+                    <p className="text-[11px] text-accent font-mono mt-2">ver inventario →</p>
+                  </>
+                )}
               </Link>
             </motion.div>
           </motion.div>
