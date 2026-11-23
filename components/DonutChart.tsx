@@ -5,7 +5,15 @@ interface Segment {
 }
 
 /** Donut simple en SVG puro, sin dependencias. */
-export default function DonutChart({ segments, size = 140 }: { segments: Segment[]; size?: number }) {
+export default function DonutChart({
+  segments,
+  size = 140,
+  onSegmentClick,
+}: {
+  segments: Segment[];
+  size?: number;
+  onSegmentClick?: (label: string) => void;
+}) {
   const total = segments.reduce((s, seg) => s + seg.value, 0);
   const radius = size / 2;
   const stroke = size * 0.22;
@@ -39,6 +47,8 @@ export default function DonutChart({ segments, size = 140 }: { segments: Segment
                 strokeWidth={stroke}
                 strokeDasharray={dasharray}
                 strokeDashoffset={dashoffset}
+                onClick={onSegmentClick ? () => onSegmentClick(seg.label) : undefined}
+                style={onSegmentClick ? { cursor: "pointer" } : undefined}
               />
             );
           })}
@@ -49,7 +59,11 @@ export default function DonutChart({ segments, size = 140 }: { segments: Segment
       </svg>
       <div className="space-y-1.5">
         {segments.map((seg, i) => (
-          <div key={i} className="flex items-center gap-2 text-xs">
+          <div
+            key={i}
+            className={`flex items-center gap-2 text-xs ${onSegmentClick ? "cursor-pointer hover:underline" : ""}`}
+            onClick={onSegmentClick ? () => onSegmentClick(seg.label) : undefined}
+          >
             <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: seg.color }} />
             <span className="text-steel">{seg.label}</span>
             <span className="font-mono text-ink">{seg.value}</span>

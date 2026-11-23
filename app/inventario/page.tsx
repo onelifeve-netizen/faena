@@ -80,7 +80,6 @@ export default function Inventario() {
     if (machRes.error) setListError("No se pudo cargar el inventario. Revisá tu conexión y recargá la página.");
     setMachines((machRes.data as unknown as Machine[]) ?? []);
     setZones((zonesRes.data as Location[]) ?? []);
-    const today = new Date().toISOString().slice(0, 10);
     const in7Days = new Date();
     in7Days.setDate(in7Days.getDate() + 7);
     setUpcomingMaintenance(
@@ -503,6 +502,14 @@ export default function Inventario() {
                   },
                 ])}
               size={84}
+              onSegmentClick={(label) => {
+                if (label === "Sin zona asignada") {
+                  setLocationFilter("");
+                  return;
+                }
+                const z = zones.find((zz) => zz.name === label);
+                if (z) setLocationFilter(z.id);
+              }}
             />
             <div className="flex flex-wrap gap-3 flex-1">
               <label className="text-xs text-steel">
