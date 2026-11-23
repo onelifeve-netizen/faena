@@ -571,38 +571,50 @@ export default function Inventario() {
             </div>
           </div>
 
-          {showCostByZone && zones.length > 0 && (
-            <div className="bg-panel border border-line rounded-tag shadow-card p-4 mb-6">
-              <p className="text-xs text-steel uppercase tracking-wide font-mono mb-3">Valor de inventario por zona</p>
-              <div className="space-y-2">
-                {[...zones]
-                  .map((z) => {
-                    const items = machines.filter((m) => m.location_id === z.id);
-                    const units = items.reduce((s, m) => s + m.quantity, 0);
-                    const total = items.reduce((sum, m) => sum + (m.purchase_price != null ? toReference(m.purchase_price, m.purchase_price_fx_rate) * m.quantity : 0), 0);
-                    return { zone: z, count: items.length, units, total };
-                  })
-                  .sort((a, b) => b.total - a.total)
-                  .map(({ zone, count, units, total }) => (
-                    <div key={zone.id} className="flex items-center justify-between text-sm">
-                      <span className="text-ink">{zone.name} <span className="text-xs text-steel font-mono">({count} línea{count === 1 ? "" : "s"} · {units} unid.)</span></span>
-                      <span className="serial">{formatMoney(total, refCurrency)}</span>
+          {showCostByZone && zones.length > 0 && (() => {
+            const rows = [...zones]
+              .map((z) => {
+                const items = machines.filter((m) => m.location_id === z.id);
+                const units = items.reduce((s, m) => s + m.quantity, 0);
+                const total = items.reduce((sum, m) => sum + (m.purchase_price != null ? toReference(m.purchase_price, m.purchase_price_fx_rate) * m.quantity : 0), 0);
+                return { name: z.name, count: items.length, units, total, color: categoryColor(z.name, zones.map((zz) => zz.name)) };
+              })
+              .sort((a, b) => b.total - a.total);
+            const sinZona = machines.filter((m) => !m.location_id);
+            if (sinZona.length > 0) {
+              rows.push({
+                name: "Sin zona asignada",
+                count: sinZona.length,
+                units: sinZona.reduce((s, m) => s + m.quantity, 0),
+                total: sinZona.reduce((sum, m) => sum + (m.purchase_price != null ? toReference(m.purchase_price, m.purchase_price_fx_rate) * m.quantity : 0), 0),
+                color: "#C7CBD9",
+              });
+            }
+            const maxTotal = Math.max(1, ...rows.map((r) => r.total));
+            return (
+              <div className="bg-panel border border-line rounded-tag shadow-card p-5 mb-6">
+                <p className="text-xs text-steel uppercase tracking-wide font-mono mb-4">Valor de inventario por zona</p>
+                <div className="space-y-3">
+                  {rows.map((r) => (
+                    <div key={r.name}>
+                      <div className="flex items-baseline justify-between gap-3 mb-1">
+                        <span className="font-medium text-sm text-ink">
+                          {r.name}
+                          <span className="ml-2 text-xs text-steel font-normal">
+                            {r.count} línea{r.count === 1 ? "" : "s"} · {r.units} unid.
+                          </span>
+                        </span>
+                        <span className="font-display font-bold text-sm text-ink shrink-0">{formatMoney(r.total, refCurrency)}</span>
+                      </div>
+                      <div className="h-1.5 bg-base rounded-full overflow-hidden">
+                        <div className="h-full rounded-full" style={{ width: `${(r.total / maxTotal) * 100}%`, background: r.color }} />
+                      </div>
                     </div>
                   ))}
-                {(() => {
-                  const sinZona = machines.filter((m) => !m.location_id);
-                  const units = sinZona.reduce((s, m) => s + m.quantity, 0);
-                  const total = sinZona.reduce((sum, m) => sum + (m.purchase_price != null ? toReference(m.purchase_price, m.purchase_price_fx_rate) * m.quantity : 0), 0);
-                  return sinZona.length > 0 ? (
-                    <div className="flex items-center justify-between text-sm text-steel pt-1 border-t border-line">
-                      <span>Sin zona asignada <span className="text-xs font-mono">({sinZona.length} línea{sinZona.length === 1 ? "" : "s"} · {units} unid.)</span></span>
-                      <span className="serial">{formatMoney(total, refCurrency)}</span>
-                    </div>
-                  ) : null;
-                })()}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {manageZones && canWrite(role) && (
             <div className="bg-panel border border-line rounded-tag shadow-card p-4 mb-6">
